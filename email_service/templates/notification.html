@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ subject | default('Notification') }}{% endblock %}
+
+{% block header %}{{ subject | default('Notification') }}{% endblock %}
+
+{% block content %}
+<p>Hello <strong>{{ user_name | default('User') }}</strong>,</p>
+
+{{ message | safe }}
+
+{% if action_link %}
+<center>
+    <a href="{{ action_link }}" class="button">{{ action_text | default('Take Action') }}</a>
+</center>
+
+<p>If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="word-break: break-all; color: #667eea;">{{ action_link }}</p>
+{% endif %}
+
+<p>Best regards,<br>
+    The {{ app_name | default('InQuantic') }} Team</p>
+{% endblock %}
