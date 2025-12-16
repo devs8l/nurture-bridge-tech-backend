@@ -1,15 +1,21 @@
 from datetime import datetime
 from uuid import uuid4
 from typing import Optional, List
+from enum import Enum as PyEnum
 
-from sqlalchemy import String, Boolean, JSON
+from sqlalchemy import String, Boolean, JSON, Enum, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 from db.base import Base
-from db.models.mixins import TimestampMixin, SoftDeleteMixin
+from db.models.mixins import SoftDeleteMixin
 
-class Tenant(Base, TimestampMixin, SoftDeleteMixin):
+class TenantStatus(str, PyEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    SUSPENDED = "SUSPENDED"
+
+class Tenant(Base):
     """
     Represents a hospital, clinic, or organization.
     Partitioning key for most data.
@@ -22,6 +28,13 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
         primary_key=True,
         default=lambda: str(uuid4()),
         nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+        index=True
     )
 
     code: Mapped[str] = mapped_column(
@@ -38,15 +51,24 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
         comment="Display name of the organization"
     )
 
-    settings: Mapped[Optional[dict]] = mapped_column(
-        JSON,
-        nullable=True,
-        comment="Tenant-specific configuration (branding, features, etc.)"
+    registration_number: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
     )
 
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
+    registration_authority: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    accreditation_type: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True
+    )
+
+    status: Mapped[TenantStatus] = mapped_column(
+        Enum(TenantStatus, native_enum=False),
+        default=TenantStatus.ACTIVE,
         nullable=False
     )
 
