@@ -18,12 +18,17 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     AsyncEngine
 )
+
+import os
+from dotenv import load_dotenv
+
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool, QueuePool
 
 from config.settings import settings
 from app_logging.logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 
@@ -44,32 +49,30 @@ class Base(DeclarativeBase):
 # ============================================================================
 
 # Configure connection pool based on environment
+# Async engine uses QueuePool by default
 if settings.ENVIRONMENT == "test":
     # Use NullPool for tests (no connection reuse)
-    poolclass = NullPool
-    pool_size = 0
-    max_overflow = 0
+    pool_args = {"poolclass": NullPool}
     logger.info("database_pool_disabled", reason="test_environment")
 else:
-    # Use QueuePool for production
-    poolclass = QueuePool
-    pool_size = settings.DB_POOL_SIZE
-    max_overflow = settings.DB_MAX_OVERFLOW
+    # Use default QueuePool
+    pool_args = {
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+        "pool_recycle": 3600,
+        "pool_pre_ping": True,
+    }
     logger.info(
         "database_pool_configured",
-        pool_size=pool_size,
-        max_overflow=max_overflow
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW
     )
 
 # Create async engine
 engine: AsyncEngine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DB_ECHO,
-    poolclass=poolclass,
-    pool_size=pool_size if poolclass == QueuePool else 0,
-    max_overflow=max_overflow if poolclass == QueuePool else 0,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=3600,  # Recycle connections after 1 hour
+    **pool_args
 )
 
 # ============================================================================

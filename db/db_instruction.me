@@ -1,0 +1,322 @@
+Absolutely — below is an **updated, clean, developer-friendly README** that **extends your existing one** to include the **Intake system with optional scoring**, without rewriting everything from scratch.
+
+You can **replace / append** this in your existing DB README and directly share it with **Antigravity**.
+
+---
+
+# 📘 NBT Database – Usage & Design Guide (v2)
+
+> This document explains **how the NBT database is intended to be used**,
+> **why schemas are separated**, and **what rules application code must follow**.
+
+This is a **contract**, not just documentation.
+
+---
+
+## 1. High-Level Architecture
+
+NBT uses **three distinct clinical data layers**:
+
+```
+Auth Layer        → Who can access the system
+Intake Layer      → Who the child is (clinical context)
+Assessment Layer  → How the child performs (screening)
+```
+
+These layers **must never be mixed**.
+
+---
+
+## 2. Core Design Principles (Non-Negotiable)
+
+1. **Invitation-only onboarding**
+2. **Multi-tenant isolation**
+3. **Assessments are immutable**
+4. **Intake is editable**
+5. **Scoring ≠ Assessment**
+6. **Auditability over convenience**
+
+---
+
+## 3. Schema Overview
+
+| Schema       | Purpose                            |
+| ------------ | ---------------------------------- |
+| `auth`       | Authentication, users, invitations |
+| `tenant`     | Hospitals / clinics                |
+| `clinical`   | Doctors, parents, children         |
+| `intake`     | Clinical onboarding & case history |
+| `assessment` | Psychometric screening engine      |
+| `audit`      | Compliance & access logs           |
+
+---
+
+## 4. INTAKE SYSTEM (NEW & IMPORTANT)
+
+### What Intake Is
+
+The **intake system** captures **clinical context** about the child and family, such as:
+
+* Parent details
+* Birth & medical history
+* Developmental milestones
+* Family & social background
+* Chief complaints & concerns
+
+### What Intake Is NOT
+
+* ❌ Not a diagnostic tool
+* ❌ Not psychometrically validated
+* ❌ Not immutable
+
+---
+
+## 5. Intake vs Assessment (Critical Difference)
+
+| Feature   | Intake      | Assessment           |
+| --------- | ----------- | -------------------- |
+| Editable  | ✅ Yes       | ❌ No                 |
+| Scored    | ⚠️ Optional | ✅ Always             |
+| Free-text | ✅ Heavy     | ⚠️ Limited           |
+| Purpose   | Context     | Screening            |
+| Re-usable | Over time   | One-time per session |
+
+> **Scoring alone does not make something an assessment.**
+
+---
+
+## 6. Intake Schema – How It Works
+
+### 6.1 `intake.sections`
+
+Represents **logical UI sections** (cards / tabs).
+
+Examples:
+
+* Child Profile
+* Mother Profile
+* Father Profile
+* Birth History
+* Developmental History
+
+```sql
+intake.sections
+```
+
+**Important rules**
+
+* Sections are **configuration**
+* Sections are **never deleted**
+* `is_active = false` hides the section for new intakes
+* Historical data must remain accessible
+
+---
+
+### 6.2 `intake.questions`
+
+Defines **what questions exist**.
+
+Key properties:
+
+* Age applicability
+* Answer type
+* Repeatability (siblings, hospitalizations)
+* Optional scoring support
+
+**Some intake questions may be scorable**, e.g.:
+
+* “Can the child crawl?”
+* “Does the child respond to name?”
+
+But:
+
+* Intake scoring is **informational**
+* It does **not produce diagnostic scores**
+
+---
+
+### 6.3 `intake.responses`
+
+Represents **one intake session per child**.
+
+Lifecycle:
+
+1. Created → `IN_PROGRESS`
+2. Answers saved incrementally
+3. Marked `COMPLETED` when finished
+
+Intake can be:
+
+* Resumed
+* Edited
+* Updated over time
+
+---
+
+### 6.4 `intake.answers`
+
+Stores **answers to intake questions**.
+
+Each row:
+
+* Belongs to one intake session
+* Belongs to one question
+* Is editable
+
+If a question is scorable, the answer may include:
+
+* `answer_bucket` (normalized category)
+* `score` (informational)
+
+Unlike assessment answers:
+
+* These **can change**
+* Scores may be recomputed
+
+---
+
+## 7. ASSESSMENT SYSTEM (UNCHANGED)
+
+### What Assessments Are
+
+Assessments are:
+
+* Structured
+* Age-aware
+* Scored
+* Immutable
+* Used for screening (e.g., autism indicators)
+
+### Key Guarantees
+
+* A question is answered **once**
+* Answers cannot be edited
+* Scores are final
+* Assessments can be resumed if incomplete
+
+---
+
+### 7.1 `assessment.questions`
+
+Defines:
+
+* Question text
+* Age applicability
+* Age-specific behavior (`age_protocol`)
+* Scoring buckets
+
+This is **configuration**, not user data.
+
+---
+
+### 7.2 `assessment.responses`
+
+Represents **one screening session** for:
+
+* One child
+* One section
+
+Stores:
+
+* Final score
+* Max possible score
+* Completion timestamp
+
+---
+
+### 7.3 `assessment.question_answers`
+
+Stores **immutable facts**:
+
+| Field           | Meaning                       |
+| --------------- | ----------------------------- |
+| `raw_answer`    | What the parent actually said |
+| `answer_bucket` | Final interpreted category    |
+| `score`         | Numeric score (locked)        |
+
+Rules:
+
+* One answer per question per session
+* No retries
+* No edits
+* No recalculation
+
+---
+
+## 8. How Intake & Assessment Work Together
+
+### Intake
+
+* Builds the **clinical picture**
+* Drives context in UI
+* Supports clinician understanding
+* May contribute **descriptive insights**
+
+### Assessment
+
+* Produces **screening scores**
+* Drives risk indicators
+* Supports clinical decisions
+
+### UI Example
+
+* Profile tab → Intake data
+* Score card → Assessment data
+* Insights → Combination of both
+
+---
+
+## 9. Audit & Compliance
+
+All sensitive operations must log to `audit.logs`, including:
+
+* Login
+* Assessment start / completion
+* Viewing child data
+* Editing intake data
+
+This is mandatory for healthcare environments.
+
+---
+
+## 10. What Application Code MUST Respect
+
+✔ Do not mix intake & assessment logic
+✔ Do not allow assessment answer edits
+✔ Do not delete configuration data
+✔ Do not bypass invitation flow
+✔ Do not cross tenant boundaries
+
+Violating these breaks system guarantees.
+
+---
+
+## 11. Mental Model (Read This Twice)
+
+> **Intake answers describe the child.**
+> **Assessment answers evaluate the child.**
+> **Scores from intake inform.**
+> **Scores from assessment decide.**
+
+---
+
+## 12. Final Note for Antigravity / Backend Editors
+
+This database is:
+
+* Configuration-driven
+* Clinically aligned
+* Designed for evolution
+
+Code should adapt to the DB — not the other way around.
+
+---
+
+If you want next, I can:
+
+* Provide **exact SQL for the intake schema**
+* Convert your entire question list into **seed data**
+* Write **API-level contracts** for intake vs assessment
+* Create a **developer checklist** for safe DB usage
+
+You’re building this the *right* way.
