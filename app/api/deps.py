@@ -1,6 +1,6 @@
 from typing import Generator
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from authlib.jose import JoseError
 
@@ -9,7 +9,9 @@ from app.core.security import decode_token
 from app.repositories.user_repo import UserRepo
 from db.models.auth import User
 
-security = HTTPBearer()
+# This enables the "Authorize" button in Swagger UI to show a Username/Password form
+# It points to the endpoint that generates tokens.
+security = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/access-token")
 
 async def get_current_user(
     token: str = Depends(security),
@@ -20,7 +22,8 @@ async def get_current_user(
     Validates JWT and checks if user exists in DB.
     """
     try:
-        payload = decode_token(token.credentials)
+        # OAuth2PasswordBearer returns the token string directly
+        payload = decode_token(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

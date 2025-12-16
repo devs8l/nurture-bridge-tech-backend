@@ -21,7 +21,7 @@ class UserStatus(str, PyEnum):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
 
-class User(Base, TimestampMixin, SoftDeleteMixin):
+class User(Base, TimestampMixin):
     """
     Represents an authenticated user.
     """
@@ -42,18 +42,13 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         index=True
     )
 
-    hashed_password: Mapped[str] = mapped_column(
+    password_hash: Mapped[str] = mapped_column(
         String(255),
         nullable=False
     )
 
-    full_name: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True
-    )
-
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role", schema="auth"),
+        Enum(UserRole, native_enum=False),
         nullable=False
     )
 
@@ -65,14 +60,9 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     )
 
     status: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus, name="user_status", schema="auth"),
+        Enum(UserStatus, native_enum=False),
         default=UserStatus.PENDING,
         nullable=False
-    )
-
-    last_login_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime,
-        nullable=True
     )
 
     # Relationships
@@ -91,7 +81,7 @@ class InvitationStatus(str, PyEnum):
     EXPIRED = "EXPIRED"
     REVOKED = "REVOKED"
 
-class Invitation(Base, TimestampMixin):
+class Invitation(Base): # <--- Removed TimestampMixin
     """
     Pending invitations to join the system.
     """
@@ -112,7 +102,7 @@ class Invitation(Base, TimestampMixin):
     )
 
     role_to_assign: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role", schema="auth"),
+        Enum(UserRole, native_enum=False),
         nullable=False
     )
 
@@ -142,13 +132,19 @@ class Invitation(Base, TimestampMixin):
     )
 
     status: Mapped[InvitationStatus] = mapped_column(
-        Enum(InvitationStatus, name="invitation_status", schema="auth"),
+        Enum(InvitationStatus, native_enum=False),
         default=InvitationStatus.PENDING,
         nullable=False
     )
 
     expires_at: Mapped[datetime] = mapped_column(
         DateTime,
+        nullable=False
+    )
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
         nullable=False
     )
 

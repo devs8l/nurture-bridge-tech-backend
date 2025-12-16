@@ -127,7 +127,7 @@ async def test_user(test_session: AsyncSession, test_user_data: dict):
         email=test_user_data["email"],
         username=test_user_data["username"],
         password_hash=hash_password(test_user_data["password"]),
-        full_name=test_user_data["full_name"],
+        # full_name removed
         is_active=True,
         is_superuser=False
     )
@@ -186,7 +186,7 @@ async def admin_user(test_session: AsyncSession):
         email="admin@example.com",
         username="admin",
         password_hash=hash_password("AdminPassword123!"),
-        full_name="Admin User",
+        # full_name removed
         is_active=True,
         is_superuser=True
     )

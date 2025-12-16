@@ -12,9 +12,7 @@ class UserResponse(BaseSchema):
     """
     id: UUID
     email: str
-    full_name: Optional[str] = None
     role: UserRole
     tenant_id: Optional[UUID] = None
     status: UserStatus
-    last_login_at: Optional[datetime] = None
     # We do NOT include hashed_password here

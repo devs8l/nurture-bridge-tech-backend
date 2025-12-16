@@ -43,7 +43,7 @@ class UserRepo(BaseRepository[User, LoginRequest, LoginRequest]): # LoginRequest
         
         db_user = User(
             email=email,
-            hashed_password=hashed_password,
+            password_hash=hashed_password,
             role=role,
             tenant_id=str(tenant_id), # UUID to str for DB if model expects str or UUID type depending on implementation
             status=UserStatus.ACTIVE

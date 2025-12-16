@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from app_logging.logger import get_logger
-from security.auth import get_current_user  # Optional: add when auth is needed
+from app.api.deps import get_current_user  # Optional: add when auth is needed
 
 logger = get_logger(__name__)
 
