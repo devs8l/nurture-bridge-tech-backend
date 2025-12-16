@@ -20,7 +20,8 @@ import time
 
 from config.settings import settings
 from app_logging.logger import get_logger, log_request
-from app.router import router
+from app.api.v1.router import api_router as router
+
 
 # Initialize structured logger
 logger = get_logger(__name__)

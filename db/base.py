@@ -69,8 +69,14 @@ else:
     )
 
 # Create async engine
+# Create async engine
+# Ensure we use the asyncpg driver even if the env var specifies postgresql://
+database_url = settings.DATABASE_URL
+if database_url and database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://")
+
 engine: AsyncEngine = create_async_engine(
-    settings.DATABASE_URL,
+    database_url,
     echo=settings.DB_ECHO,
     **pool_args
 )

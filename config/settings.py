@@ -64,8 +64,8 @@ class Settings:
     # DATABASE
     # ========================================================================
     DATABASE_URL: str = config(
-        "DATABASE_URL",
-        default="postgresql+asyncpg://user:password@localhost:5432/dbname"
+        "DEV_DATABASE_URL",
+        default=config("DATABASE_URL", default="postgresql+asyncpg://user:password@localhost:5432/dbname")
     )
     DB_POOL_SIZE: int = config("DB_POOL_SIZE", default=20, cast=int)
     DB_MAX_OVERFLOW: int = config("DB_MAX_OVERFLOW", default=10, cast=int)

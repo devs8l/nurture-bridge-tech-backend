@@ -55,7 +55,7 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
     doctors: Mapped[List["Doctor"]] = relationship("Doctor", back_populates="tenant")
     parents: Mapped[List["Parent"]] = relationship("Parent", back_populates="tenant")
     children: Mapped[List["Child"]] = relationship("Child", back_populates="tenant")
-    sections: Mapped[List["Section"]] = relationship("Section", back_populates="tenant")
+    sections: Mapped[List["AssessmentSection"]] = relationship("AssessmentSection", back_populates="tenant")
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, code={self.code}, name={self.name})>"
