@@ -23,22 +23,64 @@ async def create_invitation(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Create an invitation (Super Admin or Tenant Admin only).
+    Create an invitation.
+    - SUPER_ADMIN: Can invite TENANT_ADMIN
+    - TENANT_ADMIN: Can invite DOCTOR, PARENT
+    - DOCTOR: Can invite PARENT only
     """
-    # Enforce permissions
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN]:
-         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to create invitations"
-        )
+    # Enforce role-based permissions
+    if current_user.role == UserRole.SUPER_ADMIN:
+        # Super Admin can only invite Tenant Admins
+        if invitation_data.role != UserRole.TENANT_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Super Admin can only invite Tenant Admins"
+            )
     
-    # Additional Tenant check: Tenant Admin can only invite to their own tenant
-    if current_user.role == UserRole.TENANT_ADMIN:
+    elif current_user.role == UserRole.TENANT_ADMIN:
+        # Tenant Admin can invite Doctors and Parents
+        if invitation_data.role not in [UserRole.DOCTOR, UserRole.PARENT]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant Admin can only invite Doctors or Parents"
+            )
+        # Must be for their own tenant
         if str(invitation_data.tenant_id) != str(current_user.tenant_id):
-             raise HTTPException(
+            raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot invite users to a different tenant"
             )
+    
+    elif current_user.role == UserRole.DOCTOR:
+        # Doctor can only invite Parents
+        if invitation_data.role != UserRole.PARENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Doctors can only invite Parents"
+            )
+        # Must be for their own tenant
+        if str(invitation_data.tenant_id) != str(current_user.tenant_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot invite users to a different tenant"
+            )
+        # Must provide doctor_id (should be themselves)
+        from app.services.clinical_service import ClinicalService
+        clinical_service = ClinicalService()
+        doctor = await clinical_service.get_doctor_by_user_id(db, user_id=str(current_user.id))
+        if not doctor:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Doctor profile not found"
+            )
+        # Auto-set doctor_id to the inviting doctor
+        invitation_data.doctor_id = str(doctor.id)
+    
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to create invitations"
+        )
 
     service = AuthService()
     return await service.create_invitation(

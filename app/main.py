@@ -85,8 +85,8 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app with lifespan context manager
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.0",
-    description="InQuantic.ai Microservice - Production Ready",
+    version="0.0.2",
+    description="InQuantic.ai - Nurture Bridge Microservice",
     docs_url="/api/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url="/api/redoc" if settings.ENVIRONMENT != "production" else None,
     openapi_url="/api/openapi.json" if settings.ENVIRONMENT != "production" else None,

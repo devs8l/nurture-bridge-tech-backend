@@ -112,6 +112,36 @@ class AuthService:
             tenant_id=invite.tenant_id
         )
         
+        # Auto-create clinical profiles based on role
+        from app.services.clinical_service import ClinicalService
+        from db.models.auth import UserRole
+        
+        clinical_service = ClinicalService()
+        
+        if invite.role_to_assign == UserRole.DOCTOR:
+            # Create doctor profile
+            await clinical_service.create_doctor_profile(
+                db,
+                user_id=str(user.id),
+                tenant_id=invite.tenant_id,
+                license_number=""  # Can be updated later via PATCH
+            )
+        
+        elif invite.role_to_assign == UserRole.PARENT:
+            # Create parent profile with assigned doctor
+            if not invite.doctor_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Parent invitations must include assigned doctor"
+                )
+            
+            await clinical_service.create_parent_profile(
+                db,
+                user_id=str(user.id),
+                tenant_id=invite.tenant_id,
+                assigned_doctor_id=invite.doctor_id
+            )
+        
         # Mark invitation as accepted
         await invitation_repo.mark_as_accepted(db, invitation=invite)
         
