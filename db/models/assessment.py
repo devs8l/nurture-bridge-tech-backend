@@ -28,12 +28,6 @@ class AssessmentSection(Base, TimestampMixin):
         nullable=False
     )
 
-    tenant_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
-        ForeignKey("tenant.tenants.id"),
-        nullable=False
-    )
-
     title: Mapped[str] = mapped_column(
         String(255),
         nullable=False
@@ -55,10 +49,6 @@ class AssessmentSection(Base, TimestampMixin):
         default=True,
         nullable=False
     )
-
-    # Relationships
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="sections")
-    questions: Mapped[List["AssessmentQuestion"]] = relationship("AssessmentQuestion", back_populates="section")
 
     def __repr__(self) -> str:
         return f"<AssessmentSection(id={self.id}, title={self.title})>"
@@ -113,9 +103,6 @@ class AssessmentQuestion(Base, TimestampMixin):
         default=0,
         nullable=False
     )
-
-    # Relationships
-    section: Mapped["AssessmentSection"] = relationship("AssessmentSection", back_populates="questions")
 
     def __repr__(self) -> str:
         return f"<AssessmentQuestion(id={self.id}, text={self.text[:20]}...)>"

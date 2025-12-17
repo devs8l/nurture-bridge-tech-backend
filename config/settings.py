@@ -65,7 +65,7 @@ class Settings:
     # ========================================================================
     DATABASE_URL: str = config(
         "DEV_DATABASE_URL",
-        default=config("DATABASE_URL", default="postgresql+asyncpg://user:password@localhost:5432/dbname")
+        default=config("DATABASE_URL", default="postgresql+asyncpg://neondb_owner:npg_lahjNUDXQb45@ep-summer-voice-a10p3gpv-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require")
     )
     DB_POOL_SIZE: int = config("DB_POOL_SIZE", default=20, cast=int)
     DB_MAX_OVERFLOW: int = config("DB_MAX_OVERFLOW", default=10, cast=int)

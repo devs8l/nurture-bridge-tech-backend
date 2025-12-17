@@ -1,0 +1,117 @@
+"""
+Pydantic schemas for assessment models.
+"""
+
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel, Field, ConfigDict
+
+
+# ============================================================================
+# SECTION SCHEMAS
+# ============================================================================
+
+class SectionBase(BaseModel):
+    """Base schema for assessment section."""
+    title: str = Field(..., max_length=255)
+    description: Optional[str] = None
+    order_number: int = Field(default=0)
+    is_active: bool = Field(default=True)
+
+
+class SectionCreate(SectionBase):
+    """Schema for creating an assessment section."""
+    pass
+
+
+class SectionResponse(SectionBase):
+    """Schema for assessment section response."""
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# QUESTION SCHEMAS
+# ============================================================================
+
+class QuestionBase(BaseModel):
+    """Base schema for assessment question."""
+    section_id: str
+    text: str
+    min_age_months: int = Field(default=0)
+    max_age_months: int = Field(default=120)
+    age_protocol: dict = Field(default_factory=dict)
+    order_number: int = Field(default=0)
+
+
+class QuestionCreate(QuestionBase):
+    """Schema for creating an assessment question."""
+    pass
+
+
+class QuestionResponse(QuestionBase):
+    """Schema for assessment question response."""
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# RESPONSE SCHEMAS
+# ============================================================================
+
+class ResponseBase(BaseModel):
+    """Base schema for assessment response."""
+    child_id: str
+    section_id: str
+
+
+class ResponseCreate(ResponseBase):
+    """Schema for creating an assessment response."""
+    pass
+
+
+class ResponseResponse(ResponseBase):
+    """Schema for assessment response."""
+    id: str
+    status: str
+    total_score: Optional[int] = None
+    max_possible_score: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# ANSWER SCHEMAS
+# ============================================================================
+
+class AnswerBase(BaseModel):
+    """Base schema for assessment question answer."""
+    response_id: str
+    question_id: str
+    raw_answer: str
+    answer_bucket: str = Field(..., max_length=50)
+    score: int
+
+
+class AnswerCreate(AnswerBase):
+    """Schema for creating an assessment answer."""
+    pass
+
+
+class AnswerResponse(AnswerBase):
+    """Schema for assessment answer response."""
+    id: str
+    answered_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
