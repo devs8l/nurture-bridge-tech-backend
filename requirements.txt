@@ -9,6 +9,7 @@ uvicorn[standard]==0.32.0
 uvloop==0.21.0
 pydantic==2.10.0
 pydantic-settings==2.6.0
+mangum==0.18.2
 
 # Email
 aiosmtplib==3.0.2
