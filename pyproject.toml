@@ -15,7 +15,7 @@ version = "1.0.0"
 description = "Enterprise-grade microservice built with InQuantic Foundry"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Proprietary"
+license = {text = "Proprietary"}
 authors = [
     {name = "InQuantic.ai", email = "engineering@inquantic.ai"}
 ]
