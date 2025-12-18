@@ -129,9 +129,6 @@ class Settings:
     SMTP_FROM_EMAIL: str = config("SMTP_FROM_EMAIL", default="noreply@example.com")
     SMTP_FROM_NAME: str = config("SMTP_FROM_NAME", default=APP_NAME)
     SMTP_TIMEOUT: int = config("SMTP_TIMEOUT", default=30, cast=int)
-    
-    # Frontend URL for invitation links
-    FRONTEND_URL: str = config("FRONTEND_URL", default="http://localhost:3000")
 
     # ========================================================================
     # EXTERNAL SERVICES
