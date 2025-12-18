@@ -58,14 +58,41 @@ class AuthService:
         invitation_data: Any # schema: InvitationCreate
     ) -> Any: # model: Invitation
         """
-        Create a new invitation.
+        Create a new invitation and send email.
         """
         invitation_repo = InvitationRepo()
-        return await invitation_repo.create(
+        invitation = await invitation_repo.create(
             db, 
             obj_in=invitation_data, 
             invited_by_user_id=creator_user_id
         )
+        
+        # Send invitation email
+        from app.services.email_service import EmailService
+        from app.repositories.tenant_repo import TenantRepo
+        
+        email_service = EmailService()
+        
+        # Get tenant name for email
+        tenant_repo = TenantRepo()
+        tenant = await tenant_repo.get(db, id=str(invitation.tenant_id))
+        tenant_name = tenant.name if tenant else None
+        
+        # Send email (non-blocking, errors logged but don't fail the request)
+        try:
+            await email_service.send_invitation_email(
+                to_email=invitation.email,
+                token=invitation.token,
+                role=invitation.role_to_assign.value,
+                tenant_name=tenant_name
+            )
+        except Exception as e:
+            # Log error but don't fail the invitation creation
+            import structlog
+            logger = structlog.get_logger(__name__)
+            logger.error("failed_to_send_invitation_email", error=str(e), email=invitation.email)
+        
+        return invitation
 
     async def accept_invitation(self, db: AsyncSession, token: str, password: str) -> User:
         """

@@ -18,6 +18,7 @@ class InvitationCreate(BaseSchema):
 class InvitationResponse(BaseSchema):
     """
     Schema for invitation response.
+    Token is sent via email, not returned in API response.
     """
     id: UUID
     email: str
@@ -26,6 +27,7 @@ class InvitationResponse(BaseSchema):
     doctor_id: Optional[UUID] = None
     status: InvitationStatus
     expires_at: datetime
-    # We generally do NOT return the token in the API response for security (it's sent via email).
-    # But for development/MVP where email isn't set up, we return it to allow copy-pasting.
-    token: str 
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True 
