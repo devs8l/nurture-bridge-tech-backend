@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.schemas.common import HealthResponse
-from app.api.v1.endpoints import auth, tenants, clinical, assessment
+from app.api.v1.endpoints import auth, tenants, clinical, assessment, email
 
 api_router = APIRouter()
 
@@ -9,6 +9,12 @@ api_router.include_router(
     auth.router,
     prefix="/auth",
     tags=["Authentication"]
+)
+
+api_router.include_router(
+    email.router,
+    prefix="/email",
+    tags=["Email"]
 )
 
 api_router.include_router(
