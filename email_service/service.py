@@ -8,16 +8,18 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 from smtplib import SMTP, SMTPException
 
+from config.settings import settings
+
 # Basic Logging Configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration for Gmail SMTP
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USERNAME = "meetayra@gmail.com"
-SMTP_PASSWORD = "vgti gqyl sgck kpoz"
-SYSTEM_FROM_EMAIL = "meetayra@gmail.com"
+# Configuration from environment variables
+SMTP_SERVER = settings.SMTP_HOST
+SMTP_PORT = settings.SMTP_PORT
+SMTP_USERNAME = settings.SMTP_USERNAME
+SMTP_PASSWORD = settings.SMTP_PASSWORD
+SYSTEM_FROM_EMAIL = settings.SMTP_FROM_EMAIL
 
 
 def send_email(to_email: str, subject: str, body: str) -> bool:
