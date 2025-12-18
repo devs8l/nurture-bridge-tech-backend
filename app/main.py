@@ -31,9 +31,9 @@ trace.set_tracer_provider(TracerProvider())
 tracer = trace.get_tracer(__name__)
 
 #comment this out to stop printing to console
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(ConsoleSpanExporter())
-)
+# trace.get_tracer_provider().add_span_processor(
+#     BatchSpanProcessor(ConsoleSpanExporter())
+# )
 
 # Prometheus metrics
 REQUEST_COUNT = Counter(

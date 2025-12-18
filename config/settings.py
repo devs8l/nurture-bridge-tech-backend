@@ -36,8 +36,8 @@ class Settings:
     # ========================================================================
     # SECURITY
     # ========================================================================
-    SECRET_KEY: str = config("SECRET_KEY", default="CHANGE-ME-IN-PRODUCTION-USE-STRONG-KEY")
-    JWT_SECRET_KEY: str = config("JWT_SECRET_KEY", default="CHANGE-ME-IN-PRODUCTION")
+    SECRET_KEY: str = config("SECRET_KEY")
+    JWT_SECRET_KEY: str = config("JWT_SECRET_KEY")
     JWT_ALGORITHM: str = config("JWT_ALGORITHM", default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = config("ACCESS_TOKEN_EXPIRE_MINUTES", default=30, cast=int)
     REFRESH_TOKEN_EXPIRE_DAYS: int = config("REFRESH_TOKEN_EXPIRE_DAYS", default=7, cast=int)
@@ -63,10 +63,7 @@ class Settings:
     # ========================================================================
     # DATABASE
     # ========================================================================
-    DATABASE_URL: str = config(
-        "PROD_DATABASE_URL",
-        default=config("DATABASE_URL", default="postgresql+asyncpg://neondb_owner:npg_lahjNUDXQb45@ep-summer-voice-a10p3gpv-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require")
-    )
+    DATABASE_URL: str = config("DATABASE_URL")
     DB_POOL_SIZE: int = config("DB_POOL_SIZE", default=20, cast=int)
     DB_MAX_OVERFLOW: int = config("DB_MAX_OVERFLOW", default=10, cast=int)
     DB_ECHO: bool = config("DB_ECHO", default=False, cast=bool)
