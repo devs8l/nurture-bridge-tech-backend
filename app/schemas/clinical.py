@@ -24,6 +24,7 @@ class DoctorResponse(BaseSchema):
     id: UUID
     user_id: UUID
     tenant_id: UUID
+    name: str
     license_number: str
     specialization: Optional[str] = None
     created_at: datetime
@@ -52,6 +53,7 @@ class ParentResponse(BaseSchema):
     id: UUID
     user_id: UUID
     tenant_id: UUID
+    name: str
     assigned_doctor_id: UUID
     phone_number: Optional[str] = None
     created_at: datetime

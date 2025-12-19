@@ -12,6 +12,7 @@ class UserResponse(BaseSchema):
     """
     id: UUID
     email: str
+    name: str
     role: UserRole
     tenant_id: Optional[UUID] = None
     status: UserStatus

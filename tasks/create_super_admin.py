@@ -34,6 +34,7 @@ async def create_super_admin():
         # Create new user
         new_user = User(
             email=email,
+            name="NBT_super_admin",  # Default name for super admin
             password_hash=hash_password(password),
             role=UserRole.SUPER_ADMIN,
             status=UserStatus.ACTIVE

@@ -10,6 +10,7 @@ class LoginRequest(BaseSchema):
 
 class PasswordSetRequest(BaseSchema):
     """Schema for setting password during invitation acceptance."""
+    name: str = Field(..., min_length=1, max_length=255, description="User's full name")
     password: str = Field(..., min_length=8, description="New password")
     confirm_password: str = Field(..., min_length=8, description="Confirm new password")
 
@@ -23,3 +24,7 @@ class TokenResponse(BaseSchema):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    name: str  # User's name
+    role: str  # User's role
+    tenant_id: Optional[str] = None  # User's tenant ID (None for SUPER_ADMIN)
+    email: str  # User's email

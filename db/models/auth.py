@@ -42,6 +42,13 @@ class User(Base, TimestampMixin):
         index=True
     )
 
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="NBT_super_admin",
+        comment="User's full name, default for super admin"
+    )
+
     password_hash: Mapped[str] = mapped_column(
         String(255),
         nullable=False
