@@ -4,9 +4,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_logging.logger import get_logger
 from app.schemas.tenant import TenantCreate, TenantUpdate
 from db.models.tenant import Tenant
 from db.repositories.base import BaseRepository
+
+logger = get_logger(__name__)
 
 class TenantRepo(BaseRepository[Tenant, TenantCreate, TenantUpdate]):
     """

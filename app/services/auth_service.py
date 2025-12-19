@@ -5,12 +5,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from authlib.jose import jwt, JoseError
 
+from app_logging.logger import get_logger
 from app.core.security import verify_password, create_access_token, create_refresh_token
 from app.repositories.user_repo import UserRepo
 from app.repositories.invitation_repo import InvitationRepo
 from app.schemas.invitation import InvitationCreate
 from db.models.auth import User
 from config.settings import settings
+
+logger = get_logger(__name__)
 
 class AuthService:
     """
@@ -27,11 +30,14 @@ class AuthService:
         """
         user = await self.user_repo.get_by_email(db, email=email)
         if not user:
+            logger.warning("authentication_failed", reason="user_not_found", email=email)
             return None
         
         if not verify_password(password, user.password_hash):
+            logger.warning("authentication_failed", reason="invalid_password", email=email)
             return None
-            
+        
+        logger.info("user_authenticated", user_id=str(user.id), email=email, role=user.role.value)
         return user
 
     def create_tokens(self, user_id: str, email: str, role: str) -> Dict[str, Any]:
@@ -60,22 +66,32 @@ class AuthService:
         """
         Create a new invitation.
         """
+        logger.info(
+            "creating_invitation",
+            creator_user_id=creator_user_id,
+            role=invitation_data.role.value,
+            tenant_id=str(invitation_data.tenant_id)
+        )
         invitation_repo = InvitationRepo()
-        return await invitation_repo.create(
+        invitation = await invitation_repo.create(
             db, 
             obj_in=invitation_data, 
             invited_by_user_id=creator_user_id
         )
+        logger.info("invitation_created", invitation_id=str(invitation.id), email=invitation.email)
+        return invitation
 
     async def accept_invitation(self, db: AsyncSession, token: str, password: str) -> User:
         """
         Accept an invitation.
         Validates token, checks expiration, creates user, marks invitation as accepted.
         """
+        logger.info("accepting_invitation", token_prefix=token[:8] + "...")
         invitation_repo = InvitationRepo()
         invite = await invitation_repo.get_by_token(db, token=token)
         
         if not invite:
+            logger.warning("invitation_not_found", token_prefix=token[:8] + "...")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Invalid invitation token"
@@ -104,6 +120,12 @@ class AuthService:
             )
             
         # Create User
+        logger.info(
+            "creating_user_from_invitation",
+            email=invite.email,
+            role=invite.role_to_assign.value,
+            tenant_id=invite.tenant_id
+        )
         user = await self.user_repo.create_from_invitation(
             db,
             email=invite.email,
@@ -144,5 +166,11 @@ class AuthService:
         
         # Mark invitation as accepted
         await invitation_repo.mark_as_accepted(db, invitation=invite)
+        logger.info(
+            "invitation_accepted",
+            user_id=str(user.id),
+            email=user.email,
+            role=user.role.value
+        )
         
         return user

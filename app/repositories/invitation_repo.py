@@ -5,10 +5,13 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_logging.logger import get_logger
 from db.repositories.base import BaseRepository
 from db.models.auth import Invitation, InvitationStatus, UserRole
 from app.schemas.invitation import InvitationCreate
 from config.settings import settings
+
+logger = get_logger(__name__)
 
 class InvitationRepo(BaseRepository[Invitation, InvitationCreate, InvitationCreate]):
     """
@@ -50,6 +53,7 @@ class InvitationRepo(BaseRepository[Invitation, InvitationCreate, InvitationCrea
         db.add(db_obj)
         await db.commit()
         await db.refresh(db_obj)
+        logger.info("invitation_created_in_db", invitation_id=str(db_obj.id), email=db_obj.email)
         return db_obj
 
     async def get_by_token(self, db: AsyncSession, *, token: str) -> Optional[Invitation]:

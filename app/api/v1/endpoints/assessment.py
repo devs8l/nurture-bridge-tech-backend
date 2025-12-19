@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app_logging.logger import get_logger
 from db.base import get_db
 from db.models.assessment import (
     AssessmentSection,
@@ -28,6 +29,7 @@ from app.schemas.assessment import (
     AnswerResponse
 )
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 

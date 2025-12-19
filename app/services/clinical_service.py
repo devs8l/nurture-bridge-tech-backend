@@ -2,6 +2,7 @@ from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_logging.logger import get_logger
 from app.repositories.clinical_repo import DoctorRepo, ParentRepo, ChildRepo
 from app.schemas.clinical import (
     DoctorUpdate, DoctorResponse,
@@ -9,6 +10,8 @@ from app.schemas.clinical import (
     ChildCreate, ChildUpdate, ChildResponse
 )
 from db.models.clinical import Doctor, Parent, Child
+
+logger = get_logger(__name__)
 
 class ClinicalService:
     """
@@ -38,6 +41,12 @@ class ClinicalService:
         Create doctor profile during invitation acceptance.
         INTERNAL USE ONLY - called from auth_service.
         """
+        logger.info(
+            "creating_doctor_profile",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            has_license=bool(license_number)
+        )
         doctor = Doctor(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -47,6 +56,7 @@ class ClinicalService:
         db.add(doctor)
         await db.commit()
         await db.refresh(doctor)
+        logger.info("doctor_profile_created", doctor_id=str(doctor.id), user_id=user_id)
         return doctor
     
     async def get_doctor_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Doctor]:
@@ -63,10 +73,12 @@ class ClinicalService:
         """Update doctor profile."""
         doctor = await self.doctor_repo.get(db, id=doctor_id)
         if not doctor:
+            logger.warning("doctor_not_found", doctor_id=doctor_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Doctor not found"
             )
+        logger.info("updating_doctor_profile", doctor_id=doctor_id)
         return await self.doctor_repo.update(db, db_obj=doctor, obj_in=update_data)
     
     async def get_doctor_assigned_parents(
@@ -120,6 +132,12 @@ class ClinicalService:
         Create parent profile during invitation acceptance.
         INTERNAL USE ONLY - called from auth_service.
         """
+        logger.info(
+            "creating_parent_profile",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            assigned_doctor_id=assigned_doctor_id
+        )
         parent = Parent(
             user_id=user_id,
             tenant_id=tenant_id,
@@ -129,6 +147,7 @@ class ClinicalService:
         db.add(parent)
         await db.commit()
         await db.refresh(parent)
+        logger.info("parent_profile_created", parent_id=str(parent.id), user_id=user_id)
         return parent
     
     async def get_parent_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Parent]:
@@ -192,12 +211,15 @@ class ClinicalService:
         Create a child for a parent.
         This is the ONLY clinical entity parents can create via API.
         """
-        return await self.child_repo.create(
+        logger.info("creating_child", parent_id=parent_id, tenant_id=tenant_id)
+        child = await self.child_repo.create(
             db, 
             obj_in=child_data, 
             parent_id=parent_id,
             tenant_id=tenant_id
         )
+        logger.info("child_created", child_id=str(child.id), parent_id=parent_id)
+        return child
     
     async def update_child(
         self, 
@@ -210,6 +232,7 @@ class ClinicalService:
         """Update child information."""
         child = await self.child_repo.get(db, id=child_id)
         if not child:
+            logger.warning("child_not_found", child_id=child_id)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Child not found"
@@ -217,11 +240,18 @@ class ClinicalService:
         
         # Verify ownership
         if child.parent_id != parent_id:
+            logger.warning(
+                "unauthorized_child_update",
+                child_id=child_id,
+                parent_id=parent_id,
+                actual_parent_id=child.parent_id
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update this child"
             )
         
+        logger.info("updating_child", child_id=child_id, parent_id=parent_id)
         return await self.child_repo.update(db, db_obj=child, obj_in=update_data)
     
     async def get_child(self, db: AsyncSession, *, child_id: str) -> Optional[Child]:
