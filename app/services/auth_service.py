@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from authlib.jose import jwt, JoseError
 
 from app_logging.logger import get_logger
+from app_logging.audit import audit_authentication, audit_authorization, audit_data_modification
 from app.core.security import verify_password, create_access_token, create_refresh_token
 from app.repositories.user_repo import UserRepo
 from app.repositories.invitation_repo import InvitationRepo
@@ -31,13 +32,31 @@ class AuthService:
         user = await self.user_repo.get_by_email(db, email=email)
         if not user:
             logger.warning("authentication_failed", reason="user_not_found", email=email)
+            audit_authentication(
+                actor=f"user:{email}",
+                success=False,
+                reason="user_not_found",
+                email=email
+            )
             return None
         
         if not verify_password(password, user.password_hash):
             logger.warning("authentication_failed", reason="invalid_password", email=email)
+            audit_authentication(
+                actor=f"user:{user.id}",
+                success=False,
+                reason="invalid_password",
+                email=email
+            )
             return None
         
         logger.info("user_authenticated", user_id=str(user.id), email=email, role=user.role.value)
+        audit_authentication(
+            actor=f"user:{user.id}",
+            success=True,
+            email=email,
+            role=user.role.value
+        )
         return user
 
     def create_tokens(self, user_id: str, email: str, role: str, name: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
