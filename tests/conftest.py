@@ -120,16 +120,15 @@ def test_user_data() -> dict:
 @pytest.fixture
 async def test_user(test_session: AsyncSession, test_user_data: dict):
     """Create test user in database"""
-    from db.models import User
-    from security.auth import hash_password
+    from db.models.auth import User, UserRole, UserStatus
+    from app.core.security import hash_password
 
     user = User(
         email=test_user_data["email"],
-        username=test_user_data["username"],
+        name=test_user_data.get("full_name", "Test User"),
         password_hash=hash_password(test_user_data["password"]),
-        # full_name removed
-        is_active=True,
-        is_superuser=False
+        role=UserRole.DOCTOR,
+        status=UserStatus.ACTIVE
     )
 
     test_session.add(user)
@@ -179,16 +178,15 @@ async def authenticated_client(
 @pytest.fixture
 async def admin_user(test_session: AsyncSession):
     """Create admin user for testing"""
-    from db.models import User
-    from security.auth import hash_password
+    from db.models.auth import User, UserRole, UserStatus
+    from app.core.security import hash_password
 
     admin = User(
         email="admin@example.com",
-        username="admin",
+        name="NBT_super_admin",
         password_hash=hash_password("AdminPassword123!"),
-        # full_name removed
-        is_active=True,
-        is_superuser=True
+        role=UserRole.SUPER_ADMIN,
+        status=UserStatus.ACTIVE
     )
 
     test_session.add(admin)

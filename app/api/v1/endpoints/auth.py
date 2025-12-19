@@ -106,7 +106,7 @@ async def login(
             detail="Incorrect email or password",
         )
         
-    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value)
+    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value, name=user.name, tenant_id=str(user.tenant_id) if user.tenant_id else None)
 
 @router.post("/access-token", response_model=TokenResponse)
 async def login_for_access_token(
@@ -128,7 +128,7 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value)
+    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value, name=user.name, tenant_id=str(user.tenant_id) if user.tenant_id else None)
 
 @router.post("/invitations/{token}/accept", response_model=UserResponse)
 async def accept_invitation(
@@ -137,5 +137,5 @@ async def accept_invitation(
     db: AsyncSession = Depends(get_db)
 ):
     service = AuthService()
-    user = await service.accept_invitation(db, token=token, password=password_data.password)
+    user = await service.accept_invitation(db, token=token, name=password_data.name, password=password_data.password)
     return user

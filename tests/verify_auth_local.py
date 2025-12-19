@@ -53,6 +53,7 @@ async def verify_auth_flow():
     created_user = User(
         id="user-123",
         email="newuser@example.com",
+        name="Test Doctor",
         hashed_password=hash_password(password),
         role=UserRole.DOCTOR,
         status=UserStatus.ACTIVE

@@ -31,6 +31,7 @@ class ClinicalService:
         *, 
         user_id: str, 
         tenant_id: str,
+        name: str,
         license_number: str = "",
         specialization: Optional[str] = None
     ) -> Doctor:
@@ -41,6 +42,7 @@ class ClinicalService:
         doctor = Doctor(
             user_id=user_id,
             tenant_id=tenant_id,
+            name=name,
             license_number=license_number,
             specialization=specialization
         )
@@ -113,6 +115,7 @@ class ClinicalService:
         *, 
         user_id: str, 
         tenant_id: str,
+        name: str,
         assigned_doctor_id: str,
         phone_number: Optional[str] = None
     ) -> Parent:
@@ -123,6 +126,7 @@ class ClinicalService:
         parent = Parent(
             user_id=user_id,
             tenant_id=tenant_id,
+            name=name,
             assigned_doctor_id=assigned_doctor_id,
             phone_number=phone_number
         )

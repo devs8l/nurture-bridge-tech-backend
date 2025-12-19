@@ -34,7 +34,7 @@ class AuthService:
             
         return user
 
-    def create_tokens(self, user_id: str, email: str, role: str) -> Dict[str, Any]:
+    def create_tokens(self, user_id: str, email: str, role: str, name: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate access and refresh tokens for the user.
         """
@@ -48,7 +48,11 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "name": name,
+            "role": role,
+            "tenant_id": tenant_id,
+            "email": email
         }
 
     async def create_invitation(
@@ -67,11 +71,17 @@ class AuthService:
             invited_by_user_id=creator_user_id
         )
 
-    async def accept_invitation(self, db: AsyncSession, token: str, password: str) -> User:
+    async def accept_invitation(self, db: AsyncSession, token: str, name: str, password: str) -> User:
         """
         Accept an invitation.
         Validates token, checks expiration, creates user, marks invitation as accepted.
         """
+        # Validate name is provided
+        if not name or not name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Name is required"
+            )
         invitation_repo = InvitationRepo()
         invite = await invitation_repo.get_by_token(db, token=token)
         
@@ -107,6 +117,7 @@ class AuthService:
         user = await self.user_repo.create_from_invitation(
             db,
             email=invite.email,
+            name=name,
             password=password,
             role=invite.role_to_assign,
             tenant_id=invite.tenant_id
@@ -124,6 +135,7 @@ class AuthService:
                 db,
                 user_id=str(user.id),
                 tenant_id=invite.tenant_id,
+                name=name,
                 license_number=""  # Can be updated later via PATCH
             )
         
@@ -139,6 +151,7 @@ class AuthService:
                 db,
                 user_id=str(user.id),
                 tenant_id=invite.tenant_id,
+                name=name,
                 assigned_doctor_id=invite.doctor_id
             )
         

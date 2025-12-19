@@ -30,7 +30,8 @@ class UserRepo(BaseRepository[User, LoginRequest, LoginRequest]): # LoginRequest
         self, 
         db: AsyncSession, 
         *, 
-        email: str, 
+        email: str,
+        name: str,
         password: str,
         role: UserRole,
         tenant_id: UUID
@@ -43,6 +44,7 @@ class UserRepo(BaseRepository[User, LoginRequest, LoginRequest]): # LoginRequest
         
         db_user = User(
             email=email,
+            name=name,
             password_hash=hashed_password,
             role=role,
             tenant_id=str(tenant_id), # UUID to str for DB if model expects str or UUID type depending on implementation

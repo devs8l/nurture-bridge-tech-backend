@@ -43,6 +43,12 @@ class Doctor(Base, TimestampMixin, SoftDeleteMixin):
         nullable=False
     )
 
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Doctor's full name"
+    )
+
     license_number: Mapped[str] = mapped_column(
         String(100),
         nullable=False
@@ -94,6 +100,12 @@ class Parent(Base, TimestampMixin, SoftDeleteMixin):
         UUID(as_uuid=False),
         ForeignKey("clinical.doctors.id"),
         nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Parent's full name"
     )
 
     phone_number: Mapped[Optional[str]] = mapped_column(
