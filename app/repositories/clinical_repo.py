@@ -3,9 +3,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app_logging.logger import get_logger
 from db.repositories.base import BaseRepository
 from db.models.clinical import Doctor, Parent, Child
 from app.schemas.clinical import DoctorUpdate, ParentUpdate, ChildCreate, ChildUpdate
+
+logger = get_logger(__name__)
 
 # ============================================================================
 # DOCTOR REPOSITORY

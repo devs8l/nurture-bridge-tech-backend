@@ -3,16 +3,14 @@ Email Service Module
 Simple Gmail SMTP email sending
 """
 
-import logging
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from smtplib import SMTP_SSL, SMTPException
 
+from app_logging.logger import get_logger
 from config.settings import settings
 
-# Basic Logging Configuration
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Configuration from environment variables
 SMTP_SERVER = settings.SMTP_HOST

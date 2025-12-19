@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_logging.logger import get_logger
 from app.api.deps import get_db
 from app.services.auth_service import AuthService
 from app.schemas.auth import LoginRequest, TokenResponse, PasswordSetRequest
@@ -14,6 +15,7 @@ from db.models.auth import UserRole
 from app.api.deps import get_current_user # Need this import too!
 from db.models.auth import User
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 @router.post("/invitations", response_model=InvitationResponse)
@@ -32,6 +34,13 @@ async def create_invitation(
     if current_user.role == UserRole.SUPER_ADMIN:
         # Super Admin can only invite Tenant Admins
         if invitation_data.role != UserRole.TENANT_ADMIN:
+            logger.warning(
+                "unauthorized_invitation_attempt",
+                user_id=str(current_user.id),
+                user_role=current_user.role.value,
+                attempted_role=invitation_data.role.value,
+                reason="super_admin_can_only_invite_tenant_admin"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Super Admin can only invite Tenant Admins"
@@ -40,6 +49,13 @@ async def create_invitation(
     elif current_user.role == UserRole.TENANT_ADMIN:
         # Tenant Admin can invite Doctors and Parents
         if invitation_data.role not in [UserRole.DOCTOR, UserRole.PARENT]:
+            logger.warning(
+                "unauthorized_invitation_attempt",
+                user_id=str(current_user.id),
+                user_role=current_user.role.value,
+                attempted_role=invitation_data.role.value,
+                reason="tenant_admin_can_only_invite_doctors_or_parents"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Tenant Admin can only invite Doctors or Parents"
@@ -54,6 +70,13 @@ async def create_invitation(
     elif current_user.role == UserRole.DOCTOR:
         # Doctor can only invite Parents
         if invitation_data.role != UserRole.PARENT:
+            logger.warning(
+                "unauthorized_invitation_attempt",
+                user_id=str(current_user.id),
+                user_role=current_user.role.value,
+                attempted_role=invitation_data.role.value,
+                reason="doctor_can_only_invite_parents"
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Doctors can only invite Parents"

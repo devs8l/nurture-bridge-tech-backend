@@ -4,10 +4,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app_logging.logger import get_logger
 from db.repositories.base import BaseRepository
 from db.models.auth import User, UserRole, UserStatus
 from app.schemas.auth import LoginRequest
 from app.core.security import hash_password
+
+logger = get_logger(__name__)
 
 class UserRepo(BaseRepository[User, LoginRequest, LoginRequest]): # LoginRequest is just minimal place holder
     """
@@ -54,4 +57,5 @@ class UserRepo(BaseRepository[User, LoginRequest, LoginRequest]): # LoginRequest
         db.add(db_user)
         await db.commit()
         await db.refresh(db_user)
+        logger.info("user_created_in_db", user_id=str(db_user.id), email=email, role=role.value)
         return db_user
