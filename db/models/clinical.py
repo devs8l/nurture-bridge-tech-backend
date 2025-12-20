@@ -15,6 +15,123 @@ class Gender(str, PyEnum):
     FEMALE = "FEMALE"
     OTHER = "OTHER"
 
+
+class HOD(Base, TimestampMixin, SoftDeleteMixin):
+    """
+    Head of Department - Clinical authority.
+    
+    HOD has full visibility of patients in their department and
+    controls report assignment to doctors.
+    """
+    __tablename__ = "hods"
+    __table_args__ = {"schema": "clinical"}
+    
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False
+    )
+    
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("auth.users.id"),
+        unique=True,
+        nullable=False,
+        comment="1-to-1 link with auth.users (enforced even with soft-delete)"
+    )
+    
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenant.tenants.id"),
+        nullable=False
+    )
+    
+    first_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    
+    last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    
+    department: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Organizational department (e.g., Pediatrics, Neurology)"
+    )
+    
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="hod_profile")
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="hods")
+    
+    def __repr__(self) -> str:
+        return f"<HOD(id={self.id}, name={self.first_name} {self.last_name}, department={self.department})>"
+
+
+class Receptionist(Base, TimestampMixin, SoftDeleteMixin):
+    """
+    Receptionist - Patient onboarding staff.
+    
+    Receptionist can:
+    - Create parent invitations
+    - View parent during onboarding flow only
+    
+    Receptionist CANNOT:
+    - View assessments
+    - View reports
+    - Create staff
+    """
+    __tablename__ = "receptionists"
+    __table_args__ = {"schema": "clinical"}
+    
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False
+    )
+    
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("auth.users.id"),
+        unique=True,
+        nullable=False,
+        comment="1-to-1 link with auth.users (enforced even with soft-delete)"
+    )
+    
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenant.tenants.id"),
+        nullable=False
+    )
+    
+    first_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    
+    last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    
+    department: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Organizational department for filtering/reporting"
+    )
+    
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="receptionist_profile")
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="receptionists")
+    
+    def __repr__(self) -> str:
+        return f"<Receptionist(id={self.id}, name={self.first_name} {self.last_name}, department={self.department})>"
+
+
 class Doctor(Base, TimestampMixin, SoftDeleteMixin):
     """
     Represents a licensed clinician.
@@ -42,21 +159,27 @@ class Doctor(Base, TimestampMixin, SoftDeleteMixin):
         ForeignKey("tenant.tenants.id"),
         nullable=False
     )
-
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        comment="Doctor's full name"
-    )
-
-    license_number: Mapped[str] = mapped_column(
+    
+    first_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False
     )
-
-    specialization: Mapped[Optional[str]] = mapped_column(
+    
+    last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+    
+    department: Mapped[str] = mapped_column(
         String(255),
-        nullable=True
+        nullable=False,
+        comment="Organizational department (renamed from specialization)"
+    )
+    
+    license_number: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Medical license number - can be updated later by HOD/Admin"
     )
 
     # Relationships
@@ -96,16 +219,21 @@ class Parent(Base, TimestampMixin, SoftDeleteMixin):
         nullable=False
     )
 
-    assigned_doctor_id: Mapped[str] = mapped_column(
+    assigned_doctor_id: Mapped[Optional[str]] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey("clinical.doctors.id"),
+        nullable=True,
+        comment="Assigned doctor (optional, can be set later)"
+    )
+    
+    first_name: Mapped[str] = mapped_column(
+        String(100),
         nullable=False
     )
-
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        comment="Parent's full name"
+    
+    last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
     )
 
     phone_number: Mapped[Optional[str]] = mapped_column(

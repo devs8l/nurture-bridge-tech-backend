@@ -13,9 +13,11 @@ from db.models.clinical import Gender
 class DoctorUpdate(BaseSchema):
     """
     Schema for updating doctor profile.
-    Doctors can only update their specialization.
+    Doctor can update their department and license number.
+    License number is optional and can be set later by HOD/Admin.
     """
-    specialization: Optional[str] = Field(None, max_length=255)
+    department: Optional[str] = Field(None, max_length=255)
+    license_number: Optional[str] = Field(None, max_length=100)
 
 class DoctorResponse(BaseSchema):
     """
@@ -24,13 +26,67 @@ class DoctorResponse(BaseSchema):
     id: UUID
     user_id: UUID
     tenant_id: UUID
-    name: str
-    license_number: str
-    specialization: Optional[str] = None
+    first_name: str
+    last_name: str
+    license_number: Optional[str] = None
+    department: str
     created_at: datetime
     updated_at: datetime
     
-    # Nested user info (from relationship)
+    class Config:
+        from_attributes = True
+
+# ============================================================================
+# HOD SCHEMAS
+# ============================================================================
+
+class HODUpdate(BaseSchema):
+    """
+    Schema for updating HOD profile.
+    HOD can update their department.
+    """
+    department: Optional[str] = Field(None, max_length=255)
+
+class HODResponse(BaseSchema):
+    """
+    Schema for HOD profile response.
+    """
+    id: UUID
+    user_id: UUID
+    tenant_id: UUID
+    first_name: str
+    last_name: str
+    department: str
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# ============================================================================
+# RECEPTIONIST SCHEMAS
+# ============================================================================
+
+class ReceptionistUpdate(BaseSchema):
+    """
+    Schema for updating receptionist profile.
+    Receptionist can update their department.
+    """
+    department: Optional[str] = Field(None, max_length=255)
+
+class ReceptionistResponse(BaseSchema):
+    """
+    Schema for receptionist profile response.
+    """
+    id: UUID
+    user_id: UUID
+    tenant_id: UUID
+    first_name: str
+    last_name: str
+    department: str
+    created_at: datetime
+    updated_at: datetime
+    
     class Config:
         from_attributes = True
 
@@ -53,8 +109,9 @@ class ParentResponse(BaseSchema):
     id: UUID
     user_id: UUID
     tenant_id: UUID
-    name: str
-    assigned_doctor_id: UUID
+    first_name: str
+    last_name: str
+    assigned_doctor_id: Optional[UUID] = None
     phone_number: Optional[str] = None
     created_at: datetime
     updated_at: datetime

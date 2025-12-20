@@ -75,6 +75,8 @@ class Tenant(Base):
     # Relationships
     users: Mapped[List["User"]] = relationship("User", back_populates="tenant")
     doctors: Mapped[List["Doctor"]] = relationship("Doctor", back_populates="tenant")
+    hods: Mapped[List["HOD"]] = relationship("HOD", back_populates="tenant")
+    receptionists: Mapped[List["Receptionist"]] = relationship("Receptionist", back_populates="tenant")
     parents: Mapped[List["Parent"]] = relationship("Parent", back_populates="tenant")
     children: Mapped[List["Child"]] = relationship("Child", back_populates="tenant")
 

@@ -11,9 +11,21 @@ from db.base import Base
 from db.models.mixins import TimestampMixin, SoftDeleteMixin
 
 class UserRole(str, PyEnum):
+    """
+    User roles in the system.
+    
+    SUPER_ADMIN: Platform administrator
+    TENANT_ADMIN: Hospital IT/System administrator (NOT receptionist)
+    HOD: Head of Department - Clinical authority
+    DOCTOR: Clinical reviewer
+    RECEPTIONIST: Patient onboarding staff
+    PARENT: Parent/caregiver
+    """
     SUPER_ADMIN = "SUPER_ADMIN"
     TENANT_ADMIN = "TENANT_ADMIN"
+    HOD = "HOD"
     DOCTOR = "DOCTOR"
+    RECEPTIONIST = "RECEPTIONIST"
     PARENT = "PARENT"
 
 class UserStatus(str, PyEnum):
@@ -75,6 +87,8 @@ class User(Base, TimestampMixin):
     # Relationships
     tenant: Mapped[Optional["Tenant"]] = relationship("Tenant", back_populates="users")
     doctor_profile: Mapped[Optional["Doctor"]] = relationship("Doctor", back_populates="user", uselist=False)
+    hod_profile: Mapped[Optional["HOD"]] = relationship("HOD", back_populates="user", uselist=False)
+    receptionist_profile: Mapped[Optional["Receptionist"]] = relationship("Receptionist", back_populates="user", uselist=False)
     parent_profile: Mapped[Optional["Parent"]] = relationship("Parent", back_populates="user", uselist=False)
     sent_invitations: Mapped[List["Invitation"]] = relationship("Invitation", back_populates="invited_by_user", foreign_keys="[Invitation.invited_by_user_id]")
 
@@ -130,6 +144,12 @@ class Invitation(Base): # <--- Removed TimestampMixin
         ForeignKey("clinical.doctors.id"),
         nullable=True,
         comment="If user is a PARENT, this is their assigning doctor"
+    )
+    
+    department: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Required for HOD/DOCTOR/RECEPTIONIST invitations"
     )
 
     token: Mapped[str] = mapped_column(

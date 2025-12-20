@@ -3,13 +3,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app_logging.logger import get_logger
-from app.repositories.clinical_repo import DoctorRepo, ParentRepo, ChildRepo
+from app.repositories.clinical_repo import DoctorRepo, ParentRepo, ChildRepo, HODRepo, ReceptionistRepo
 from app.schemas.clinical import (
     DoctorUpdate, DoctorResponse,
     ParentUpdate, ParentResponse,
-    ChildCreate, ChildUpdate, ChildResponse
+    ChildCreate, ChildUpdate, ChildResponse,
+    HODUpdate, HODResponse,
+    ReceptionistUpdate, ReceptionistResponse
 )
-from db.models.clinical import Doctor, Parent, Child
+from db.models.clinical import Doctor, Parent, Child, HOD, Receptionist
 
 logger = get_logger(__name__)
 
@@ -21,6 +23,8 @@ class ClinicalService:
     
     def __init__(self):
         self.doctor_repo = DoctorRepo()
+        self.hod_repo = HODRepo()
+        self.receptionist_repo = ReceptionistRepo()
         self.parent_repo = ParentRepo()
         self.child_repo = ChildRepo()
     
@@ -34,9 +38,10 @@ class ClinicalService:
         *, 
         user_id: str, 
         tenant_id: str,
-        name: str,
-        license_number: str = "",
-        specialization: Optional[str] = None
+        first_name: str,
+        last_name: str,
+        department: str,
+        license_number: Optional[str] = None
     ) -> Doctor:
         """
         Create doctor profile during invitation acceptance.
@@ -46,14 +51,16 @@ class ClinicalService:
             "creating_doctor_profile",
             user_id=user_id,
             tenant_id=tenant_id,
+            department=department,
             has_license=bool(license_number)
         )
         doctor = Doctor(
             user_id=user_id,
             tenant_id=tenant_id,
-            name=name,
-            license_number=license_number,
-            specialization=specialization
+            first_name=first_name,
+            last_name=last_name,
+            department=department,
+            license_number=license_number
         )
         db.add(doctor)
         await db.commit()
@@ -110,12 +117,133 @@ class ClinicalService:
         limit: int = 100
     ) -> List[Doctor]:
         """List all doctors in tenant (admin only)."""
-        return await self.doctor_repo.get_by_tenant(
+        logger.info("listing_doctors_in_tenant", tenant_id=tenant_id, skip=skip, limit=limit)
+        doctors = await self.doctor_repo.get_by_tenant(
             db, 
             tenant_id=tenant_id, 
             skip=skip, 
             limit=limit
         )
+        logger.info("doctors_found", count=len(doctors), tenant_id=tenant_id)
+        return doctors
+    
+    # ========================================================================
+    # HOD METHODS
+    # ========================================================================
+    
+    async def create_hod_profile(
+        self, 
+        db: AsyncSession, 
+        *, 
+        user_id: str, 
+        tenant_id: str,
+        first_name: str,
+        last_name: str,
+        department: str
+    ) -> HOD:
+        """
+        Create HOD profile during invitation acceptance.
+        INTERNAL USE ONLY - called from auth_service.
+        """
+        logger.info(
+            "creating_hod_profile",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            department=department
+        )
+        hod = HOD(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            first_name=first_name,
+            last_name=last_name,
+            department=department
+        )
+        db.add(hod)
+        await db.commit()
+        await db.refresh(hod)
+        logger.info("hod_profile_created", hod_id=str(hod.id), user_id=user_id)
+        return hod
+    
+    async def get_hod_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[HOD]:
+        """Get HOD profile by user ID."""
+        return await self.hod_repo.get_by_user_id(db, user_id=user_id)
+    
+    async def update_hod(
+        self, 
+        db: AsyncSession, 
+        *, 
+        hod_id: str, 
+        update_data: HODUpdate
+    ) -> HOD:
+        """Update HOD profile."""
+        hod = await self.hod_repo.get(db, id=hod_id)
+        if not hod:
+            logger.warning("hod_not_found", hod_id=hod_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="HOD not found"
+            )
+        logger.info("updating_hod_profile", hod_id=hod_id)
+        return await self.hod_repo.update(db, db_obj=hod, obj_in=update_data)
+    
+    # ========================================================================
+    # RECEPTIONIST METHODS
+    # ========================================================================
+    
+    async def create_receptionist_profile(
+        self, 
+        db: AsyncSession, 
+        *, 
+        user_id: str, 
+        tenant_id: str,
+        first_name: str,
+        last_name: str,
+        department: str
+    ) -> Receptionist:
+        """
+        Create receptionist profile during invitation acceptance.
+        INTERNAL USE ONLY - called from auth_service.
+        """
+        logger.info(
+            "creating_receptionist_profile",
+            user_id=user_id,
+            tenant_id=tenant_id,
+            department=department
+        )
+        receptionist = Receptionist(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            first_name=first_name,
+            last_name=last_name,
+            department=department
+        )
+        db.add(receptionist)
+        await db.commit()
+        await db.refresh(receptionist)
+        logger.info("receptionist_profile_created", receptionist_id=str(receptionist.id), user_id=user_id)
+        return receptionist
+    
+    async def get_receptionist_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Receptionist]:
+        """Get receptionist profile by user ID."""
+        return await self.receptionist_repo.get_by_user_id(db, user_id=user_id)
+    
+    async def update_receptionist(
+        self, 
+        db: AsyncSession, 
+        *, 
+        receptionist_id: str, 
+        update_data: ReceptionistUpdate
+    ) -> Receptionist:
+        """Update receptionist profile."""
+        receptionist = await self.receptionist_repo.get(db, id=receptionist_id)
+        if not receptionist:
+            logger.warning("receptionist_not_found", receptionist_id=receptionist_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Receptionist not found"
+            )
+        logger.info("updating_receptionist_profile", receptionist_id=receptionist_id)
+        return await self.receptionist_repo.update(db, db_obj=receptionist, obj_in=update_data)
     
     # ========================================================================
     # PARENT METHODS
@@ -127,8 +255,9 @@ class ClinicalService:
         *, 
         user_id: str, 
         tenant_id: str,
-        name: str,
-        assigned_doctor_id: str,
+        first_name: str,
+        last_name: str,
+        assigned_doctor_id: Optional[str] = None,
         phone_number: Optional[str] = None
     ) -> Parent:
         """
@@ -144,7 +273,8 @@ class ClinicalService:
         parent = Parent(
             user_id=user_id,
             tenant_id=tenant_id,
-            name=name,
+            first_name=first_name,
+            last_name=last_name,
             assigned_doctor_id=assigned_doctor_id,
             phone_number=phone_number
         )
