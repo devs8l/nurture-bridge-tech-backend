@@ -45,6 +45,7 @@ class InvitationRepo(BaseRepository[Invitation, InvitationCreate, InvitationCrea
             invited_by_user_id=invited_by_user_id,
             tenant_id=str(obj_in.tenant_id),
             doctor_id=str(obj_in.doctor_id) if obj_in.doctor_id else None,
+            department=obj_in.department,  # Add department field
             token=token,
             status=InvitationStatus.PENDING,
             expires_at=expires_at

@@ -148,6 +148,11 @@ class AuthService:
                 detail="User with this email already exists"
             )
             
+        # Parse name into first_name, last_name
+        name_parts = name.strip().split(maxsplit=1)
+        first_name = name_parts[0]
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+            
         # Create User
         logger.info(
             "creating_user_from_invitation",
@@ -170,29 +175,72 @@ class AuthService:
         
         clinical_service = ClinicalService()
         
-        if invite.role_to_assign == UserRole.DOCTOR:
+        if invite.role_to_assign == UserRole.HOD:
+            # Validate department is present
+            if not invite.department:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This invitation is missing department information. Please request a new invitation."
+                )
+            # Create HOD profile
+            await clinical_service.create_hod_profile(
+                db,
+                user_id=str(user.id),
+                tenant_id=invite.tenant_id,
+                first_name=first_name,
+                last_name=last_name,
+                department=invite.department
+            )
+        
+        elif invite.role_to_assign == UserRole.DOCTOR:
+            # Validate department is present
+            if not invite.department:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This invitation is missing department information. Please request a new invitation."
+                )
             # Create doctor profile
             await clinical_service.create_doctor_profile(
                 db,
                 user_id=str(user.id),
                 tenant_id=invite.tenant_id,
-                name=name,
-                license_number=""  # Can be updated later via PATCH
+                first_name=first_name,
+                last_name=last_name,
+                department=invite.department,
+                license_number=None  # Can be updated later via PATCH
+            )
+        
+        elif invite.role_to_assign == UserRole.RECEPTIONIST:
+            # Validate department is present
+            if not invite.department:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This invitation is missing department information. Please request a new invitation."
+                )
+            # Create receptionist profile
+            await clinical_service.create_receptionist_profile(
+                db,
+                user_id=str(user.id),
+                tenant_id=invite.tenant_id,
+                first_name=first_name,
+                last_name=last_name,
+                department=invite.department
             )
         
         elif invite.role_to_assign == UserRole.PARENT:
             # Create parent profile with assigned doctor
-            if not invite.doctor_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Parent invitations must include assigned doctor"
-                )
+            # if not invite.doctor_id:
+            #     raise HTTPException(
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #         detail="Parent invitations must include assigned doctor"
+            #     )
             
             await clinical_service.create_parent_profile(
                 db,
                 user_id=str(user.id),
                 tenant_id=invite.tenant_id,
-                name=name,
+                first_name=first_name,
+                last_name=last_name,
                 assigned_doctor_id=invite.doctor_id
             )
         

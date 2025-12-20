@@ -26,9 +26,12 @@ async def create_invitation(
 ):
     """
     Create an invitation.
-    - SUPER_ADMIN: Can invite TENANT_ADMIN
-    - TENANT_ADMIN: Can invite DOCTOR, PARENT
-    - DOCTOR: Can invite PARENT only
+    
+    Permission Rules:
+    - SUPER_ADMIN → can invite TENANT_ADMIN only
+    - TENANT_ADMIN (Hospital IT Admin) → can invite HOD, DOCTOR, RECEPTIONIST only
+    - RECEPTIONIST → can invite PARENT only
+    - Others → cannot create invitations
     """
     # Enforce role-based permissions
     if current_user.role == UserRole.SUPER_ADMIN:
@@ -47,19 +50,27 @@ async def create_invitation(
             )
     
     elif current_user.role == UserRole.TENANT_ADMIN:
-        # Tenant Admin can invite Doctors and Parents
-        if invitation_data.role not in [UserRole.DOCTOR, UserRole.PARENT]:
+        # Tenant Admin can invite HOD, Doctor, Receptionist
+        if invitation_data.role not in [UserRole.HOD, UserRole.DOCTOR, UserRole.RECEPTIONIST]:
             logger.warning(
                 "unauthorized_invitation_attempt",
                 user_id=str(current_user.id),
                 user_role=current_user.role.value,
                 attempted_role=invitation_data.role.value,
-                reason="tenant_admin_can_only_invite_doctors_or_parents"
+                reason="tenant_admin_can_only_invite_staff"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tenant Admin can only invite Doctors or Parents"
+                detail="Tenant Admin can only invite HOD, Doctor, or Receptionist"
             )
+        
+        # Validate department is provided for staff roles
+        if not invitation_data.department:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Department is required for staff role invitations"
+            )
+        
         # Must be for their own tenant
         if str(invitation_data.tenant_id) != str(current_user.tenant_id):
             raise HTTPException(
@@ -67,37 +78,34 @@ async def create_invitation(
                 detail="Cannot invite users to a different tenant"
             )
     
-    elif current_user.role == UserRole.DOCTOR:
-        # Doctor can only invite Parents
+    elif current_user.role == UserRole.RECEPTIONIST:
+        # Receptionist can only invite Parents
         if invitation_data.role != UserRole.PARENT:
             logger.warning(
                 "unauthorized_invitation_attempt",
                 user_id=str(current_user.id),
                 user_role=current_user.role.value,
                 attempted_role=invitation_data.role.value,
-                reason="doctor_can_only_invite_parents"
+                reason="receptionist_can_only_invite_parents"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Doctors can only invite Parents"
+                detail="Receptionist can only invite Parents"
             )
+        
         # Must be for their own tenant
         if str(invitation_data.tenant_id) != str(current_user.tenant_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot invite users to a different tenant"
             )
-        # Must provide doctor_id (should be themselves)
-        from app.services.clinical_service import ClinicalService
-        clinical_service = ClinicalService()
-        doctor = await clinical_service.get_doctor_by_user_id(db, user_id=str(current_user.id))
-        if not doctor:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Doctor profile not found"
-            )
-        # Auto-set doctor_id to the inviting doctor
-        invitation_data.doctor_id = str(doctor.id)
+        
+        # Validate doctor_id is provided for parent invitations
+        # if not invitation_data.doctor_id:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Doctor assignment is required for Parent invitations"
+        #     )
     
     else:
         raise HTTPException(

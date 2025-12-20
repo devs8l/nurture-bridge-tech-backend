@@ -7,6 +7,8 @@ from app.api.deps import get_db, get_current_user
 from app.services.clinical_service import ClinicalService
 from app.schemas.clinical import (
     DoctorUpdate, DoctorResponse,
+    HODUpdate, HODResponse,
+    ReceptionistUpdate, ReceptionistResponse,
     ParentUpdate, ParentResponse,
     ChildCreate, ChildUpdate, ChildResponse
 )
@@ -123,6 +125,120 @@ async def get_my_assigned_children(
         )
     
     return await service.get_doctor_children(db, doctor_id=str(doctor.id))
+
+# ============================================================================
+# HOD ENDPOINTS
+# ============================================================================
+
+@router.get("/hods/me", response_model=HODResponse)
+async def get_my_hod_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current HOD's profile.
+    Role: HOD only.
+    """
+    if current_user.role != UserRole.HOD:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only HODs can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    hod = await service.get_hod_by_user_id(db, user_id=str(current_user.id))
+    
+    if not hod:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="HOD profile not found"
+        )
+    
+    return hod
+
+@router.patch("/hods/me", response_model=HODResponse)
+async def update_my_hod_profile(
+    update_data: HODUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update current HOD's profile.
+    Role: HOD only.
+    """
+    if current_user.role != UserRole.HOD:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only HODs can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    hod = await service.get_hod_by_user_id(db, user_id=str(current_user.id))
+    
+    if not hod:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="HOD profile not found"
+        )
+    
+    return await service.update_hod(db, hod_id=str(hod.id), update_data=update_data)
+
+# ============================================================================
+# RECEPTIONIST ENDPOINTS
+# ============================================================================
+
+@router.get("/receptionists/me", response_model=ReceptionistResponse)
+async def get_my_receptionist_profile(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current receptionist's profile.
+    Role: RECEPTIONIST only.
+    """
+    if current_user.role != UserRole.RECEPTIONIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only receptionists can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    receptionist = await service.get_receptionist_by_user_id(db, user_id=str(current_user.id))
+    
+    if not receptionist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receptionist profile not found"
+        )
+    
+    return receptionist
+
+@router.patch("/receptionists/me", response_model=ReceptionistResponse)
+async def update_my_receptionist_profile(
+    update_data: ReceptionistUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update current receptionist's profile.
+    Role: RECEPTIONIST only.
+    """
+    if current_user.role != UserRole.RECEPTIONIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only receptionists can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    receptionist = await service.get_receptionist_by_user_id(db, user_id=str(current_user.id))
+    
+    if not receptionist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Receptionist profile not found"
+        )
+    
+    return await service.update_receptionist(db, receptionist_id=str(receptionist.id), update_data=update_data)
 
 # ============================================================================
 # PARENT ENDPOINTS

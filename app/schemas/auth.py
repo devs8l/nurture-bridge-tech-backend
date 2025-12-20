@@ -9,8 +9,11 @@ class LoginRequest(BaseSchema):
     password: str
 
 class PasswordSetRequest(BaseSchema):
-    """Schema for setting password during invitation acceptance."""
-    name: str = Field(..., min_length=1, max_length=255, description="User's full name")
+    """
+    Schema for setting password during invitation acceptance.
+    Name will be parsed into first_name and last_name automatically.
+    """
+    name: str = Field(..., min_length=1, max_length=255, description="Full name (will be split into first/last name)")
     password: str = Field(..., min_length=8, description="New password")
     confirm_password: str = Field(..., min_length=8, description="Confirm new password")
 

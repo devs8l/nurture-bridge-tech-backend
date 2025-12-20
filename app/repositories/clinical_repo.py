@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app_logging.logger import get_logger
 from db.repositories.base import BaseRepository
-from db.models.clinical import Doctor, Parent, Child
-from app.schemas.clinical import DoctorUpdate, ParentUpdate, ChildCreate, ChildUpdate
+from db.models.clinical import Doctor, Parent, Child, HOD, Receptionist
+from app.schemas.clinical import DoctorUpdate, ParentUpdate, ChildCreate, ChildUpdate, HODUpdate, ReceptionistUpdate
 
 logger = get_logger(__name__)
 
@@ -47,6 +47,90 @@ class DoctorRepo(BaseRepository[Doctor, DoctorUpdate, DoctorUpdate]):
             select(Parent)
             .where(Parent.assigned_doctor_id == doctor_id)
             .where(Parent.is_deleted == False)
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+# ============================================================================
+# HOD REPOSITORY
+# ============================================================================
+
+class HODRepo(BaseRepository[HOD, HODUpdate, HODUpdate]):
+    """
+    Repository for HOD (Head of Department) entity.
+    NOTE: No create method - HODs are created via invitation acceptance only.
+    """
+    
+    def __init__(self):
+        super().__init__(HOD)
+    
+    async def get_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[HOD]:
+        """Get HOD by their user account ID."""
+        query = select(HOD).where(HOD.user_id == user_id, HOD.deleted_at.is_(None))
+        result = await db.execute(query)
+        return result.scalars().first()
+    
+    async def get_by_department(self, db: AsyncSession, *, tenant_id: str, department: str) -> List[HOD]:
+        """Get all HODs in a specific department within a tenant."""
+        query = (
+            select(HOD)
+            .where(HOD.tenant_id == tenant_id)
+            .where(HOD.department == department)
+            .where(HOD.deleted_at.is_(None))
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    
+    async def get_by_tenant(self, db: AsyncSession, *, tenant_id: str, skip: int = 0, limit: int = 100) -> List[HOD]:
+        """Get all HODs in a tenant."""
+        query = (
+            select(HOD)
+            .where(HOD.tenant_id == tenant_id)
+            .where(HOD.deleted_at.is_(None))
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+# ============================================================================
+# RECEPTIONIST REPOSITORY
+# ============================================================================
+
+class ReceptionistRepo(BaseRepository[Receptionist, ReceptionistUpdate, ReceptionistUpdate]):
+    """
+    Repository for Receptionist entity.
+    NOTE: No create method - Receptionists are created via invitation acceptance only.
+    """
+    
+    def __init__(self):
+        super().__init__(Receptionist)
+    
+    async def get_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Receptionist]:
+        """Get receptionist by their user account ID."""
+        query = select(Receptionist).where(Receptionist.user_id == user_id, Receptionist.deleted_at.is_(None))
+        result = await db.execute(query)
+        return result.scalars().first()
+    
+    async def get_by_department(self, db: AsyncSession, *, tenant_id: str, department: str) -> List[Receptionist]:
+        """Get all receptionists in a specific department within a tenant."""
+        query = (
+            select(Receptionist)
+            .where(Receptionist.tenant_id == tenant_id)
+            .where(Receptionist.department == department)
+            .where(Receptionist.deleted_at.is_(None))
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    
+    async def get_by_tenant(self, db: AsyncSession, *, tenant_id: str, skip: int = 0, limit: int = 100) -> List[Receptionist]:
+        """Get all receptionists in a tenant."""
+        query = (
+            select(Receptionist)
+            .where(Receptionist.tenant_id == tenant_id)
+            .where(Receptionist.deleted_at.is_(None))
+            .offset(skip)
+            .limit(limit)
         )
         result = await db.execute(query)
         return list(result.scalars().all())
