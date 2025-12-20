@@ -429,7 +429,7 @@ async def list_parents(
 ):
     """
     List all parents in tenant.
-    Role: TENANT_ADMIN or SUPER_ADMIN.
+    Role: TENANT_ADMIN or RECEPTIONIST or HOD.
     """
     if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.RECEPTIONIST, UserRole.HOD]:
         raise HTTPException(
@@ -454,7 +454,7 @@ async def list_children(
 ):
     """
     List all children in tenant.
-    Role: TENANT_ADMIN or SUPER_ADMIN.
+    Role: TENANT_ADMIN or HOD.
     """
     if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.HOD]:
         raise HTTPException(
