@@ -1,0 +1,166 @@
+{
+  "section_id": "105c6b6a-915e-40cf-a87f-5e0370ed9838",
+  "section_title": "Family Demographics & Basic Information",
+  "section_description": "Basic information about the child and family background for intake assessment",
+  "age_group": "1 to 5 years",
+  "questions": [
+    {
+      "order": 1,
+      "text": "What is the child's full name?",
+      "question_type": "TEXT",
+      "options": null,
+      "remarks": ""
+    },
+    {
+      "order": 2,
+      "text": "What is the child's date of birth?",
+      "question_type": "DATE",
+      "options": null,
+      "remarks": ""
+    },
+    {
+      "order": 3,
+      "text": "What is the child's current age?",
+      "question_type": "NUMBER",
+      "options": {
+        "unit": "years",
+        "min": 1,
+        "max": 5,
+        "hint": "Age will be calculated from date of birth"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 4,
+      "text": "What is the child's gender?",
+      "question_type": "RADIO",
+      "options": {
+        "choices": ["Male", "Female", "Other"]
+      },
+      "remarks": ""
+    },
+    {
+      "order": 5,
+      "text": "Parent/guardian names and occupations",
+      "question_type": "TEXTAREA",
+      "options": {
+        "placeholder": "Please provide names and occupations of parents/guardians",
+        "rows": 4
+      },
+      "remarks": ""
+    },
+    {
+      "order": 6,
+      "text": "Mother's Phone Number",
+      "question_type": "PHONE",
+      "options": {
+        "pattern": "phone",
+        "hint": "Enter valid phone number"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 7,
+      "text": "Father's Phone Number",
+      "question_type": "PHONE",
+      "options": {
+        "pattern": "phone",
+        "hint": "Enter valid phone number"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 8,
+      "text": "Mother's email id",
+      "question_type": "EMAIL",
+      "options": {
+        "pattern": "email",
+        "hint": "Enter valid email address"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 9,
+      "text": "Father's email id",
+      "question_type": "EMAIL",
+      "options": {
+        "pattern": "email",
+        "hint": "Enter valid email address"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 10,
+      "text": "Home address",
+      "question_type": "TEXTAREA",
+      "options": {
+        "placeholder": "Please provide complete home address. If parents are living separately, provide both addresses.",
+        "rows": 4,
+        "hint": "Provide two addresses if parents are living separately"
+      },
+      "remarks": "Two addresses if parents are living separately"
+    },
+    {
+      "order": 11,
+      "text": "Are the parents living together?",
+      "question_type": "RADIO",
+      "options": {
+        "choices": ["Yes", "No"],
+        "isDropdown": true,
+        "followUpQuestion": "If No, please provide details of custody arrangements"
+      },
+      "remarks": "Yes/No question with follow-up"
+    },
+    {
+      "order": 12,
+      "text": "Primary language/languages spoken at home?",
+      "question_type": "TEXT",
+      "options": {
+        "placeholder": "e.g., English, Hindi, Tamil, etc.",
+        "hint": "List all languages spoken at home"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 13,
+      "text": "Who are the primary caregivers?",
+      "question_type": "TEXTAREA",
+      "options": {
+        "placeholder": "e.g., Mother, Father, Grandparents, Nanny, etc.",
+        "rows": 3
+      },
+      "remarks": ""
+    },
+    {
+      "order": 14,
+      "text": "Who accompanies the child most of the day?",
+      "question_type": "TEXT",
+      "options": {
+        "placeholder": "Name of the person who spends most time with the child"
+      },
+      "remarks": ""
+    },
+    {
+      "order": 15,
+      "text": "Any siblings? (age, gender, schooling, developmental issues?)",
+      "question_type": "RADIO",
+      "options": {
+        "choices": ["Yes", "No"],
+        "isDropdown": true,
+        "followUpQuestion": "If Yes, please provide details: age, gender, schooling status, and any developmental issues"
+      },
+      "remarks": "If yes, the next questions can be added"
+    },
+    {
+      "order": 16,
+      "text": "Any other family member involved in care (grandparent, nanny, etc.)?",
+      "question_type": "RADIO",
+      "options": {
+        "choices": ["Yes", "No"],
+        "isDropdown": true,
+        "followUpQuestion": "If Yes, please provide details about their role and involvement"
+      },
+      "remarks": ""
+    }
+  ]
+}
