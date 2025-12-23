@@ -26,7 +26,9 @@ from app.schemas.assessment import (
     ResponseCreate,
     ResponseResponse,
     AnswerCreate,
-    AnswerResponse
+    AnswerResponse,
+    ConversationSubmitRequest,
+    ConversationSubmitResponse
 )
 
 logger = get_logger(__name__)
@@ -176,6 +178,7 @@ async def get_question(
     db: AsyncSession = Depends(get_db)
 ):
     """Get a specific assessment question by ID."""
+    #TODO: Add age filter
     result = await db.execute(
         select(AssessmentQuestion).where(AssessmentQuestion.id == question_id)
     )
@@ -384,3 +387,198 @@ async def get_answer(
         )
     
     return answer
+
+
+# ============================================================================
+# CONVERSATION SUBMIT ENDPOINT
+# ============================================================================
+
+@router.post("/submit", response_model=ConversationSubmitResponse, status_code=status.HTTP_201_CREATED)
+async def submit_conversation_answers(
+    submit_data: ConversationSubmitRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit conversation-based assessment answers.
+    
+    This endpoint:
+    1. Uses AI to map questions to answers from conversation
+    2. Uploads answers to question_answers table
+    3. Checks if all applicable questions for the section are answered
+    4. Returns completion status
+    """
+    from app.main import get_gemini_service
+    from sqlalchemy import func
+    
+    logger.info(
+        "conversation_submit_request",
+        response_id=submit_data.response_id,
+        question_count=len(submit_data.questions),
+        section_id=submit_data.section_id
+    )
+    
+    # Verify response exists
+    result = await db.execute(
+        select(AssessmentResponse).where(AssessmentResponse.id == submit_data.response_id)
+    )
+    response = result.scalar_one_or_none()
+    
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Response with id {submit_data.response_id} not found"
+        )
+    
+    # Get AI service
+    ai_service = get_gemini_service() 
+    
+    if not ai_service.is_available():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI service is not available. Please configure GEMINI_API_KEY."
+        )
+    
+    try:
+        # Use AI to map questions to answers
+        logger.info(
+            "calling_ai_map_questions",
+            response_id=submit_data.response_id,
+            question_count=len(submit_data.questions)
+        )
+        
+        ai_result = await ai_service.map_questions_to_answers(
+            conversation=submit_data.conversation,
+            questions=submit_data.questions,
+            actor=f"system:assessment_submit"
+        )
+        
+        if not ai_result.get("success"):
+            logger.error(
+                "ai_mapping_failed",
+                response_id=submit_data.response_id,
+                error=ai_result.get("error")
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"AI mapping failed: {ai_result.get('error', 'Unknown error')}"
+            )
+        
+        mapped_data = ai_result.get("result", {})
+        answers = mapped_data.get("answers", [])
+        unmapped_question_ids = mapped_data.get("meta", {}).get("unanswered_question_ids", [])
+        
+        logger.info(
+            "ai_mapping_success",
+            response_id=submit_data.response_id,
+            mapped_count=len(answers),
+            unmapped_count=len(unmapped_question_ids)
+        )
+        
+        # Upload answers to question_answers table
+        answers_created = 0
+        for answer_data in answers:
+            try:
+                # Create answer record
+                answer = AssessmentQuestionAnswer(
+                    response_id=submit_data.response_id,
+                    question_id=answer_data.get("question_id"),
+                    raw_answer=answer_data.get("raw_answer", ""),
+                    answer_bucket=answer_data.get("answer_bucket", "NOT_OBSERVED"),
+                    score=answer_data.get("score", 0)
+                )
+                db.add(answer)
+                answers_created += 1
+                
+            except Exception as e:
+                logger.warning(
+                    "answer_creation_failed",
+                    response_id=submit_data.response_id,
+                    question_id=answer_data.get("question_id"),
+                    error=str(e)
+                )
+        
+        # Commit all answer
+        await db.commit()
+        
+        logger.info(
+            "answers_uploaded",
+            response_id=submit_data.response_id,
+            answers_created=answers_created
+        )
+        
+        # Check section completion
+        # Get total applicable questions for this section and child age
+        applicable_questions_result = await db.execute(
+            select(func.count(AssessmentQuestion.id))
+            .where(
+                AssessmentQuestion.section_id == submit_data.section_id,
+                AssessmentQuestion.min_age_months <= submit_data.child_age_months,
+                AssessmentQuestion.max_age_months >= submit_data.child_age_months
+            )
+        )
+        total_applicable_questions = applicable_questions_result.scalar() or 0
+        
+        # Get count of answered questions for this response
+        answered_questions_result = await db.execute(
+            select(func.count(AssessmentQuestionAnswer.id))
+            .where(AssessmentQuestionAnswer.response_id == submit_data.response_id)
+        )
+        answered_questions_count = answered_questions_result.scalar() or 0
+        
+        # Calculate completion
+        section_complete = answered_questions_count >= total_applicable_questions
+        completion_percentage = (
+            (answered_questions_count / total_applicable_questions * 100)
+            if total_applicable_questions > 0
+            else 0.0
+        )
+        
+        logger.info(
+            "section_completion_check",
+            response_id=submit_data.response_id,
+            section_id=submit_data.section_id,
+            answered=answered_questions_count,
+            total_applicable=total_applicable_questions,
+            complete=section_complete,
+            percentage=completion_percentage
+        )
+        
+        # Update response status if section is complete
+        if section_complete and response.status != AssessmentStatus.COMPLETED:
+            from datetime import datetime
+            response.status = AssessmentStatus.COMPLETED
+            response.completed_at = datetime.utcnow()
+            await db.commit()
+            
+            logger.info(
+                "response_marked_complete",
+                response_id=submit_data.response_id
+            )
+        
+        return ConversationSubmitResponse(
+            success=True,
+            response_id=submit_data.response_id,
+            section_id=submit_data.section_id,
+            child_id=submit_data.child_id,
+            answers_created=answers_created,
+            total_questions=total_applicable_questions,
+            section_complete=section_complete,
+            completion_percentage=round(completion_percentage, 2),
+            unmapped_questions=unmapped_question_ids,
+            message=f"Successfully created {answers_created} answers. Section {'complete' if section_complete else 'in progress'}."
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "conversation_submit_error",
+            response_id=submit_data.response_id,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process conversation: {str(e)}"
+        )

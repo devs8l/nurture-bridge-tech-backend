@@ -196,3 +196,4 @@ docs/_build/
 .ruff_cache/
 node_modules/
 nbt_schema
+misc/

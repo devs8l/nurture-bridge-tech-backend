@@ -115,3 +115,32 @@ class AnswerResponse(AnswerBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# CONVERSATION SUBMIT SCHEMAS
+# ============================================================================
+
+class ConversationSubmitRequest(BaseModel):
+    """Schema for submitting conversation-based assessment answers."""
+    response_id: str = Field(..., description="Assessment response ID")
+    child_age_months: int = Field(..., description="Child's age in months")
+    conversation: List[dict] = Field(..., description="Voice conversation as list of messages")
+    questions: List[dict] = Field(..., description="List of questions to map")
+    section_id: str = Field(..., description="Section ID for completion checking")
+    child_id: str = Field(..., description="Child ID for the assessment")
+
+
+class ConversationSubmitResponse(BaseModel):
+    """Schema for conversation submit response."""
+    success: bool
+    response_id: str
+    section_id: str
+    child_id: str
+    answers_created: int
+    total_questions: int
+    section_complete: bool
+    completion_percentage: float
+    unmapped_questions: List[str] = Field(default_factory=list)
+    message: str
+

@@ -130,10 +130,11 @@ class Settings:
     # ========================================================================
     # EXTERNAL SERVICES
     # ========================================================================
-    # Add your external service configurations here
-    # Example:
-    # EXTERNAL_API_URL: str = config("EXTERNAL_API_URL", default="https://api.example.com")
-    # EXTERNAL_API_KEY: str = config("EXTERNAL_API_KEY", default="")
+    # Gemini AI Service
+    GEMINI_API_KEY: str = config("GEMINI_API_KEY", default="")
+    GEMINI_MODEL: str = config("GEMINI_MODEL", default="gemini-2.5-flash")
+    GEMINI_TEMPERATURE: float = config("GEMINI_TEMPERATURE", default=0.4, cast=float)
+    GEMINI_MAX_TOKENS: int = config("GEMINI_MAX_TOKENS", default=8192, cast=int)
 
     # ========================================================================
     # FEATURE FLAGS
