@@ -69,6 +69,8 @@ async def lifespan(app: FastAPI):
     Replaces deprecated @app.on_event decorators.
     """
     # Startup
+    global gemini_service
+    
     logger.info(
         "application_startup",
         app_name=settings.APP_NAME,
@@ -77,7 +79,6 @@ async def lifespan(app: FastAPI):
     )
     
     # Initialize AI Service
-    global gemini_service
     gemini_service = GeminiService()
     logger.info("ai_service_initialized", available=gemini_service.is_available())
     
@@ -91,7 +92,6 @@ async def lifespan(app: FastAPI):
     logger.info("application_shutdown", app_name=settings.APP_NAME)
     
     # Cleanup AI Service
-    global gemini_service
     gemini_service = None
     
     # TODO: Close database connections
