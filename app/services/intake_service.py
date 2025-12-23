@@ -61,10 +61,11 @@ class IntakeService:
     async def get_section_with_questions(
         self,
         db: AsyncSession,
-        section_id: str
+        section_id: str,
+        age_in_months: Optional[int] = None
     ) -> IntakeSection:
-        """Get section with its questions."""
-        section = await self.section_repo.get_by_id_with_questions(db, section_id)
+        """Get section with its questions, optionally filtered by age."""
+        section = await self.section_repo.get_by_id_with_questions(db, section_id, age_in_months=age_in_months)
         if not section:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

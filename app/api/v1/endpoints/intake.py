@@ -18,6 +18,15 @@ from db.models.auth import User, UserRole
 logger = get_logger(__name__)
 router = APIRouter()
 
+
+
+def caclucateAgeWithDOB(dob):
+    # Calculate age in months with DOB
+    today = date.today()
+    age_in_months = (today.year - dob.year) * 12 + (today.month - dob.month)
+    return age_in_months
+
+
 # ============================================================================
 # SECTION ENDPOINTS
 # ============================================================================
@@ -61,15 +70,17 @@ async def get_all_sections(
 @router.get("/sections/{section_id}", response_model=IntakeSectionWithQuestions)
 async def get_section(
     section_id: UUID,
+    age_in_months: int = Query(None, description="Filter questions by child's age in months"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get a specific section with its questions.
+    Optionally filter questions by age using age_in_months parameter.
     Role: All authenticated users.
     """
     service = IntakeService()
-    section = await service.get_section_with_questions(db, str(section_id))
+    section = await service.get_section_with_questions(db, str(section_id), age_in_months=age_in_months)
     return section
 
 
