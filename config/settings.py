@@ -132,8 +132,8 @@ class Settings:
     # ========================================================================
     # Gemini AI Service
     GEMINI_API_KEY: str = config("GEMINI_API_KEY", default="")
-    GEMINI_MODEL: str = config("GEMINI_MODEL", default="gemini-2.0-flash-exp")
-    GEMINI_TEMPERATURE: float = config("GEMINI_TEMPERATURE", default=0.7, cast=float)
+    GEMINI_MODEL: str = config("GEMINI_MODEL", default="gemini-2.5-flash")
+    GEMINI_TEMPERATURE: float = config("GEMINI_TEMPERATURE", default=0.4, cast=float)
     GEMINI_MAX_TOKENS: int = config("GEMINI_MAX_TOKENS", default=8192, cast=int)
 
     # ========================================================================

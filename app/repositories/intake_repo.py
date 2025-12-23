@@ -62,16 +62,62 @@ class IntakeSectionRepository:
     async def get_by_id_with_questions(
         self,
         db: AsyncSession,
-        section_id: str
+        section_id: str,
+        age_in_months: Optional[int] = None
     ) -> Optional[IntakeSection]:
-        """Get section by ID with questions."""
+        """Get section by ID with questions, optionally filtered by age."""
+        
         stmt = (
             select(IntakeSection)
             .where(IntakeSection.id == section_id)
             .options(selectinload(IntakeSection.questions))
         )
         result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        section = result.scalar_one_or_none()
+        
+        if not section:
+            return None
+        
+        # If no age filter, return as-is
+        if age_in_months is None:
+            return section
+        
+        # If age filter is provided, we need to filter questions
+        # To avoid SQLAlchemy tracking issues, we'll expunge everything first
+        if section.questions:
+            # Store the original questions before expunging
+            all_questions = list(section.questions)
+            
+            # Expunge the section and all questions from the session
+            db.expunge(section)
+            for question in all_questions:
+                db.expunge(question)
+            
+            # Now filter the questions
+            filtered_questions = []
+            for question in all_questions:
+                # Check if question has age_group in options
+                if question.options and 'age_group' in question.options:
+                    age_group = question.options['age_group']
+                    min_age = age_group.get('min_age')
+                    max_age = age_group.get('max_age')
+                    
+                    # Check if age_in_months is within the range
+                    if min_age is not None and max_age is not None:
+                        if min_age <= age_in_months <= max_age:
+                            filtered_questions.append(question)
+                    elif min_age is not None and min_age <= age_in_months:
+                        filtered_questions.append(question)
+                    elif max_age is not None and age_in_months <= max_age:
+                        filtered_questions.append(question)
+                else:
+                    # Include questions without age restrictions
+                    filtered_questions.append(question)
+            
+            # Replace questions with filtered list (safe now that everything is expunged)
+            section.questions = filtered_questions
+        
+        return section
 
 
 class IntakeQuestionRepository:

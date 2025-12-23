@@ -350,9 +350,6 @@ Return ONLY valid JSON with the EXACT structure below.
 
 OUTPUT FORMAT (STRICT JSON):
 {{
-  "response_id": "{response_id}",
-  "section_id": "{section_id}",
-  "child_id": "{child_id}",
   "answers": [
     {{
       "question_id": "string",
