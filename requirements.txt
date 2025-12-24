@@ -6,7 +6,7 @@
 # API Framework
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
-uvloop==0.21.0
+# uvloop==0.21.0
 pydantic==2.10.0
 pydantic-settings==2.6.0
 
@@ -23,16 +23,16 @@ python-decouple==3.8
 
 # Authorization
 casbin==1.37.0
-fastapi-permissions==0.2.7
+# fastapi-permissions==0.2.7
 
 # Rate Limiting
-slowapi==0.1.9
+# slowapi==0.1.9
 
 # Logging & Observability
 structlog==24.4.0
-loguru==0.7.3
+# loguru==0.7.3
 asgi-correlation-id==4.3.4
-python-json-logger==3.2.1
+# python-json-logger==3.2.1
 
 # OpenTelemetry
 opentelemetry-api==1.28.2
@@ -51,13 +51,13 @@ sqlalchemy[asyncio]==2.0.36
 alembic==1.14.0
 asyncpg==0.30.0
 
-# Redis & Caching
-redis[hiredis]==5.2.1
-hiredis==3.0.0
+# # Redis & Caching
+# redis[hiredis]==5.2.1
+# hiredis==3.0.0
 
 # Background Tasks
 celery[redis]==5.4.0
-flower==2.0.1
+# flower==2.0.1
 
 # Scheduling
 apscheduler==3.10.4
@@ -69,16 +69,16 @@ spacy==3.8.3
 
 # HTTP Client
 httpx==0.28.0
-aiohttp==3.11.10
+# aiohttp==3.11.10
 
 # Data Validation & Parsing
 python-multipart==0.0.20
 email-validator==2.2.0
-phonenumbers==8.13.51
+# phonenumbers==8.13.51
 
 # Date & Time
 python-dateutil==2.9.0.post0
-pytz==2024.2
+# pytz==2024.2
 
 # Environment & Config
 python-dotenv==1.0.1
