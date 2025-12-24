@@ -1,13 +1,11 @@
 # ============================================================================
 # INQUANTIC FOUNDRY - DOCKER COMPOSE
-# Local development stack
+# Production-ready configuration using cloud services
 # ============================================================================
-
-version: '3.8'
 
 services:
   # ============================================================================
-  # APPLICATION
+  # APPLICATION - FastAPI Backend
   # ============================================================================
   app:
     build:
@@ -16,15 +14,10 @@ services:
     container_name: inquantic-app
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://neondb_owner:npg_lahjNUDXQb45@ep-summer-voice-a10p3gpv-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require&channel_binding=require
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    depends_on:
-      - db
-      - redis
     volumes:
       - .:/app
       - ./logs:/logs
@@ -38,128 +31,112 @@ services:
       retries: 3
 
   # ============================================================================
-  # DATABASE (PostgreSQL)
+  # LOCAL POSTGRESQL - OPTIONAL (for local development/testing)
   # ============================================================================
-  db:
-    image: postgres:16-alpine
-    container_name: inquantic-db
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=inquantic
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - inquantic-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # Uncomment if you want to use local database instead of Neon cloud
+  # Remember to update DATABASE_URL in .env to: postgresql+asyncpg://postgres:postgres@db:5432/inquantic
+  # 
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: inquantic-db
+  #   environment:
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #     - POSTGRES_DB=inquantic
+  #     - PGDATA=/var/lib/postgresql/data/pgdata
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - inquantic-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
   # ============================================================================
-  # REDIS (Cache & Celery Broker)
+  # REDIS - OPTIONAL (for caching/Celery)
   # ============================================================================
-  redis:
-    image: redis:7-alpine
-    container_name: inquantic-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    networks:
-      - inquantic-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    command: redis-server --appendonly yes
+  # Uncomment if you need Redis for caching or Celery
+  # 
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: inquantic-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - inquantic-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   command: redis-server --appendonly yes
 
   # ============================================================================
-  # CELERY WORKER
+  # CELERY WORKER - OPTIONAL (for background tasks)
   # ============================================================================
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: inquantic-celery-worker
-    command: celery -A tasks.worker worker --loglevel=info
-    environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://neondb_owner:npg_lahjNUDXQb45@ep-summer-voice-a10p3gpv-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require&channel_binding=require
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - .:/app
-      - ./logs:/logs
-    networks:
-      - inquantic-network
-    restart: unless-stopped
+  # Uncomment if you need background task processing
+  # Also uncomment redis service above
+  # 
+  # celery-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: inquantic-celery-worker
+  #   command: celery -A tasks.worker worker --loglevel=info
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - ENVIRONMENT=development
+  #   depends_on:
+  #     - redis
+  #   volumes:
+  #     - .:/app
+  #     - ./logs:/logs
+  #   networks:
+  #     - inquantic-network
+  #   restart: unless-stopped
 
   # ============================================================================
-  # CELERY BEAT (Scheduler)
+  # CELERY BEAT - OPTIONAL (for scheduled tasks)
   # ============================================================================
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: inquantic-celery-beat
-    command: celery -A tasks.worker beat --loglevel=info
-    environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=postgresql+asyncpg://neondb_owner:npg_lahjNUDXQb45@ep-summer-voice-a10p3gpv-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require&channel_binding=require
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - .:/app
-      - ./logs:/logs
-    networks:
-      - inquantic-network
-    restart: unless-stopped
-
-  # ============================================================================
-  # FLOWER (Celery Monitoring)
-  # ============================================================================
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: inquantic-flower
-    command: celery -A tasks.worker flower --port=5555
-    ports:
-      - "5555:5555"
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://redis:6379/2
-    depends_on:
-      - redis
-      - celery-worker
-    networks:
-      - inquantic-network
-    restart: unless-stopped
+  # Uncomment if you need scheduled tasks
+  # Also uncomment redis service above
+  # 
+  # celery-beat:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: inquantic-celery-beat
+  #   command: celery -A tasks.worker beat --loglevel=info
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - ENVIRONMENT=development
+  #   depends_on:
+  #     - redis
+  #   volumes:
+  #     - .:/app
+  #     - ./logs:/logs
+  #   networks:
+  #     - inquantic-network
+  #   restart: unless-stopped
 
 # ============================================================================
-# VOLUMES
+# VOLUMES (only needed if using local services)
 # ============================================================================
-volumes:
-  postgres-data:
-    driver: local
-  redis-data:
-    driver: local
+# volumes:
+#   postgres-data:
+#     driver: local
+#   redis-data:
+#     driver: local
 
 # ============================================================================
 # NETWORKS

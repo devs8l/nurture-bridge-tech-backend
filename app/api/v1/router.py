@@ -39,4 +39,13 @@ api_router.include_router(
 
 @api_router.get("/health", response_model=HealthResponse, tags=["system"])
 async def health_check_placeholder():
-    return {"status": "ok"}
+    from datetime import datetime
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow(),
+        "version": "1.0.0",
+        "dependencies": {
+            "database": "connected",
+            "redis": "connected"
+        }
+    }

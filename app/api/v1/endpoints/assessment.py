@@ -4,7 +4,8 @@ Assessment endpoints for handling assessment sections, questions, responses, and
 
 from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -18,6 +19,7 @@ from db.models.assessment import (
     AssessmentQuestionAnswer,
     AssessmentStatus
 )
+from db.models.clinical import Child
 from app.schemas.assessment import (
     SectionCreate,
     SectionResponse,
@@ -33,6 +35,12 @@ from app.schemas.assessment import (
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+def calculate_age(dob):
+    # Calculate age in months with DOB
+    today = date.today()
+    age_in_months = (today.year - dob.year) * 12 + (today.month - dob.month)
+    return age_in_months
 
 
 # ============================================================================
@@ -157,15 +165,22 @@ async def create_question(
 @router.get("/questions", response_model=List[QuestionResponse])
 async def get_questions(
     section_id: str = None,
+    age_in_months: int = Query(None, description="Filter questions by child's age in months"),
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all assessment questions, optionally filtered by section."""
+    """Get all assessment questions, optionally filtered by section and age."""
     query = select(AssessmentQuestion)
     
     if section_id:
         query = query.where(AssessmentQuestion.section_id == section_id)
+    
+    if age_in_months is not None:
+        query = query.where(
+            AssessmentQuestion.min_age_months <= age_in_months,
+            AssessmentQuestion.max_age_months >= age_in_months
+        )
     
     query = query.order_by(AssessmentQuestion.order_number).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -417,6 +432,7 @@ async def submit_conversation_answers(
         section_id=submit_data.section_id
     )
     
+    
     # Verify response exists
     result = await db.execute(
         select(AssessmentResponse).where(AssessmentResponse.id == submit_data.response_id)
@@ -428,6 +444,24 @@ async def submit_conversation_answers(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Response with id {submit_data.response_id} not found"
         )
+    
+    # Get child and calculate age
+    child = await db.get(Child, submit_data.child_id)
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Child with id {submit_data.child_id} not found"
+        )
+    
+    # Calculate child's age in months
+    child_age_months = calculate_age(child.date_of_birth)
+    
+    logger.info(
+        "child_age_calculated",
+        child_id=submit_data.child_id,
+        age_months=child_age_months
+    )
     
     # Get AI service
     ai_service = get_gemini_service() 
@@ -512,8 +546,8 @@ async def submit_conversation_answers(
             select(func.count(AssessmentQuestion.id))
             .where(
                 AssessmentQuestion.section_id == submit_data.section_id,
-                AssessmentQuestion.min_age_months <= submit_data.child_age_months,
-                AssessmentQuestion.max_age_months >= submit_data.child_age_months
+                AssessmentQuestion.min_age_months <= child_age_months,
+                AssessmentQuestion.max_age_months >= child_age_months
             )
         )
         total_applicable_questions = applicable_questions_result.scalar() or 0

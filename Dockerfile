@@ -1,6 +1,7 @@
 # ============================================================================
 # INQUANTIC FOUNDRY - PRODUCTION DOCKERFILE
 # Multi-stage build for minimal image size
+# Optimized: Removed unused packages (uvloop, loguru, aiohttp, redis, etc.)
 # ============================================================================
 
 # ============================================================================
