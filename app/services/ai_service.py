@@ -257,6 +257,7 @@ class GeminiService:
         self,
         conversation: Dict[str, Any],
         questions: List[Dict[str, Any]],
+        child_age_months: Optional[int] = None,
         actor: str = "system",
         custom_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -281,6 +282,7 @@ class GeminiService:
                           {"id": "q2", "question": "How old is your child?"},
                           ...
                       ]
+            child_age_months: Optional child's age in months for context
             actor: Actor making the request (for audit logging)
             custom_prompt: Optional custom prompt to override the default
                           PASTE YOUR CUSTOM PROMPT HERE if needed
@@ -307,13 +309,16 @@ class GeminiService:
             # Use custom prompt if provided
             prompt = custom_prompt
         else:
+            # Add child age context if provided
+            age_context = f"\nCHILD AGE: {child_age_months} months\n" if child_age_months else ""
+            
             # Default prompt - PASTE YOUR CUSTOM PROMPT HERE TO OVERRIDE
             prompt = f"""
 You are a clinical assessment reasoning engine.
 
 Your task is to analyze a transcribed parent–clinician conversation and map
-the parent’s FINAL answers to the provided assessment questions.
-
+the parent's FINAL answers to the provided assessment questions.
+age in months is {age_context}
 This is a psychological assessment.
 You MUST follow these rules strictly:
 - Use only the FIRST meaningful answer per question
@@ -341,10 +346,12 @@ YES | SOMETIMES | NO | NOT_OBSERVED
 
 TASK:
 For each question:
-1. Extract the parent’s final answer from the conversation
+1. Extract the parent's final answer from the conversation
 2. Normalize it into an answer_bucket
 3. Assign a numeric score (0–4)
 4. Provide brief clinical justification
+5. If parent does not answer a question and tries to skip it or ends conversation prematurely, DO NOT CONSIDER IT AS ANSWER AND DO NOT MAP IT TO ANY QUESTION.
+6. Analyze the answer and check if it makes in context of the question and is a valid answer, that is if it answers the question which was asked then map it.
 
 Return ONLY valid JSON with the EXACT structure below.
 

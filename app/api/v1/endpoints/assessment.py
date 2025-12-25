@@ -1,13 +1,13 @@
-"""
+﻿"""
 Assessment endpoints for handling assessment sections, questions, responses, and answers.
 """
 
 from typing import List
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app_logging.logger import get_logger
@@ -30,7 +30,9 @@ from app.schemas.assessment import (
     AnswerCreate,
     AnswerResponse,
     ConversationSubmitRequest,
-    ConversationSubmitResponse
+    ConversationSubmitResponse,
+    SectionProgress,
+    AssessmentProgressResponse
 )
 
 logger = get_logger(__name__)
@@ -264,11 +266,74 @@ async def create_response(
     response_data: ResponseCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new assessment response (session)."""
-    response = AssessmentResponse(**response_data.model_dump())
+    """
+    Create a new assessment response (session).
+    Automatically fetches and stores applicable questions based on child's age.
+    """
+    # Get child to calculate age
+    child = await db.get(Child, response_data.child_id)
+    
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Child with id {response_data.child_id} not found"
+        )
+    
+    # Calculate child's age in months
+    child_age_months = calculate_age(child.date_of_birth)
+    
+    logger.info(
+        "creating_response",
+        child_id=response_data.child_id,
+        section_id=response_data.section_id
+    )
+    
+    # Fetch applicable questions for this section and child's age
+    questions_result = await db.execute(
+        select(AssessmentQuestion)
+        .where(
+            AssessmentQuestion.section_id == response_data.section_id,
+            AssessmentQuestion.min_age_months <= child_age_months,
+            AssessmentQuestion.max_age_months >= child_age_months
+        )
+        .order_by(AssessmentQuestion.order_number)
+    )
+    applicable_questions = questions_result.scalars().all()
+    
+    # Convert questions to JSON format for storage
+    unanswered_questions_list = [
+        {
+            "id": str(q.id),
+            "text": q.text,
+            "age_protocol": q.age_protocol,
+            "order_number": q.order_number
+        }
+        for q in applicable_questions
+    ]
+    
+    logger.info(
+        "applicable_questions_fetched_for_new_response",
+        section_id=response_data.section_id,
+        child_age_months=child_age_months,
+        question_count=len(unanswered_questions_list)
+    )
+    
+    # Create response with unanswered questions
+    response = AssessmentResponse(
+        **response_data.model_dump(),
+        unanswered_questions=unanswered_questions_list
+    )
+    
     db.add(response)
     await db.commit()
     await db.refresh(response)
+    
+    logger.info(
+        "response_created",
+        response_id=response.id,
+        initial_question_count=len(unanswered_questions_list)
+    )
+    
     return response
 
 
@@ -337,7 +402,6 @@ async def complete_response(
             detail=f"Response with id {response_id} not found"
         )
     
-    from datetime import datetime
     response.status = AssessmentStatus.COMPLETED
     response.completed_at = datetime.utcnow()
     
@@ -417,72 +481,90 @@ async def submit_conversation_answers(
     Submit conversation-based assessment answers.
     
     This endpoint:
-    1. Uses AI to map questions to answers from conversation
-    2. Uploads answers to question_answers table
-    3. Checks if all applicable questions for the section are answered
-    4. Returns completion status
+    1. Fetches response and its unanswered questions
+    2. Uses AI to map questions to answers from conversation (with child age context)
+    3. Uploads answers to question_answers table
+    4. Updates unanswered_questions list by removing answered questions
+    5. Checks completion status and returns results
     """
     from app.main import get_gemini_service
-    from sqlalchemy import func
     
     logger.info(
         "conversation_submit_request",
-        response_id=submit_data.response_id,
-        question_count=len(submit_data.questions),
-        section_id=submit_data.section_id
+        response_id=submit_data.response_id
     )
-    
-    
-    # Verify response exists
-    result = await db.execute(
-        select(AssessmentResponse).where(AssessmentResponse.id == submit_data.response_id)
-    )
-    response = result.scalar_one_or_none()
-    
-    if not response:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response with id {submit_data.response_id} not found"
-        )
-    
-    # Get child and calculate age
-    child = await db.get(Child, submit_data.child_id)
-    
-    if not child:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Child with id {submit_data.child_id} not found"
-        )
-    
-    # Calculate child's age in months
-    child_age_months = calculate_age(child.date_of_birth)
-    
-    logger.info(
-        "child_age_calculated",
-        child_id=submit_data.child_id,
-        age_months=child_age_months
-    )
-    
-    # Get AI service
-    ai_service = get_gemini_service() 
-    
-    if not ai_service.is_available():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI service is not available. Please configure GEMINI_API_KEY."
-        )
     
     try:
-        # Use AI to map questions to answers
+        # Fetch response with all needed data
+        result = await db.execute(
+            select(AssessmentResponse).where(AssessmentResponse.id == submit_data.response_id)
+        )
+        response = result.scalar_one_or_none()
+        
+        if not response:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Response with id {submit_data.response_id} not found"
+            )
+        
+        # Extract child_id and section_id from response
+        child_id = response.child_id
+        section_id = response.section_id
+        
+        # Get unanswered questions from response
+        unanswered_questions = response.unanswered_questions or []
+        
+        if not unanswered_questions:
+            logger.warning(
+                "no_unanswered_questions",
+                response_id=submit_data.response_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No unanswered questions found for this response. Assessment may already be complete."
+            )
+        
+        # Get child to calculate age for AI context
+        child = await db.get(Child, child_id)
+        
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Child with id {child_id} not found"
+            )
+        
+        # Calculate child's age in months for AI context
+        child_age_months = calculate_age(child.date_of_birth)
+        
+        logger.info(
+            "processing_submission",
+            response_id=submit_data.response_id,
+            child_id=child_id,
+            section_id=section_id,
+            child_age_months=child_age_months,
+            unanswered_question_count=len(unanswered_questions)
+        )
+        
+        # Get AI service
+        ai_service = get_gemini_service() 
+        
+        if not ai_service.is_available():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI service is not available. Please configure GEMINI_API_KEY."
+            )
+        
+        # Use AI to map questions to answers (passing age for context)
         logger.info(
             "calling_ai_map_questions",
             response_id=submit_data.response_id,
-            question_count=len(submit_data.questions)
+            question_count=len(unanswered_questions)
         )
         
         ai_result = await ai_service.map_questions_to_answers(
             conversation=submit_data.conversation,
-            questions=submit_data.questions,
+            questions=unanswered_questions,
+            child_age_months=child_age_months,
             actor=f"system:assessment_submit"
         )
         
@@ -510,6 +592,8 @@ async def submit_conversation_answers(
         
         # Upload answers to question_answers table
         answers_created = 0
+        failed_answers = 0
+        
         for answer_data in answers:
             try:
                 # Create answer record
@@ -524,6 +608,7 @@ async def submit_conversation_answers(
                 answers_created += 1
                 
             except Exception as e:
+                failed_answers += 1
                 logger.warning(
                     "answer_creation_failed",
                     response_id=submit_data.response_id,
@@ -531,26 +616,37 @@ async def submit_conversation_answers(
                     error=str(e)
                 )
         
-        # Commit all answer
+        # Commit all answers
         await db.commit()
         
         logger.info(
             "answers_uploaded",
             response_id=submit_data.response_id,
-            answers_created=answers_created
+            answers_created=answers_created,
+            failed_answers=failed_answers
         )
         
-        # Check section completion
-        # Get total applicable questions for this section and child age
-        applicable_questions_result = await db.execute(
+        # Update unanswered questions list by removing answered questions
+        answered_question_ids = {answer_data.get("question_id") for answer_data in answers}
+        
+        updated_unanswered = [
+            q for q in unanswered_questions 
+            if q.get("id") not in answered_question_ids
+        ]
+        
+        response.unanswered_questions = updated_unanswered
+        
+        # Get total count of all questions that were initially assigned
+        # This is the original count from when response was created
+        total_questions_result = await db.execute(
             select(func.count(AssessmentQuestion.id))
             .where(
-                AssessmentQuestion.section_id == submit_data.section_id,
+                AssessmentQuestion.section_id == section_id,
                 AssessmentQuestion.min_age_months <= child_age_months,
                 AssessmentQuestion.max_age_months >= child_age_months
             )
         )
-        total_applicable_questions = applicable_questions_result.scalar() or 0
+        total_applicable_questions = total_questions_result.scalar() or 0
         
         # Get count of answered questions for this response
         answered_questions_result = await db.execute(
@@ -560,7 +656,7 @@ async def submit_conversation_answers(
         answered_questions_count = answered_questions_result.scalar() or 0
         
         # Calculate completion
-        section_complete = answered_questions_count >= total_applicable_questions
+        section_complete = len(updated_unanswered) == 0
         completion_percentage = (
             (answered_questions_count / total_applicable_questions * 100)
             if total_applicable_questions > 0
@@ -570,35 +666,53 @@ async def submit_conversation_answers(
         logger.info(
             "section_completion_check",
             response_id=submit_data.response_id,
-            section_id=submit_data.section_id,
+            section_id=section_id,
             answered=answered_questions_count,
             total_applicable=total_applicable_questions,
+            still_unanswered=len(updated_unanswered),
             complete=section_complete,
             percentage=completion_percentage
         )
         
-        # Update response status if section is complete
+        # Update response status based on progress
         if section_complete and response.status != AssessmentStatus.COMPLETED:
-            from datetime import datetime
             response.status = AssessmentStatus.COMPLETED
             response.completed_at = datetime.utcnow()
-            await db.commit()
-            
+        elif response.status == AssessmentStatus.NOT_STARTED and answers_created > 0:
+            response.status = AssessmentStatus.IN_PROGRESS
+        
+        await db.commit()
+        
+        if section_complete:
             logger.info(
                 "response_marked_complete",
                 response_id=submit_data.response_id
             )
         
+        # Build simplified mapped answers for response (question + answer only)
+        mapped_answers_simplified = [
+            {
+                "question_id": ans.get("question_id"),
+                "question_text": next(
+                    (q.get("text") for q in unanswered_questions if q.get("id") == ans.get("question_id")),
+                    None
+                ),
+                "answer": ans.get("raw_answer")
+            }
+            for ans in answers
+        ]
+        
         return ConversationSubmitResponse(
             success=True,
             response_id=submit_data.response_id,
-            section_id=submit_data.section_id,
-            child_id=submit_data.child_id,
+            section_id=section_id,
+            child_id=child_id,
             answers_created=answers_created,
             total_questions=total_applicable_questions,
             section_complete=section_complete,
             completion_percentage=round(completion_percentage, 2),
             unmapped_questions=unmapped_question_ids,
+            mapped_answers=mapped_answers_simplified,
             message=f"Successfully created {answers_created} answers. Section {'complete' if section_complete else 'in progress'}."
         )
         
@@ -615,4 +729,188 @@ async def submit_conversation_answers(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process conversation: {str(e)}"
+        )
+
+# ============================================================================
+# PROGRESS ENDPOINT
+# ============================================================================
+
+@router.get("/progress/{child_id}", response_model=AssessmentProgressResponse)
+async def get_assessment_progress(
+    child_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get comprehensive assessment progress for a child.
+    
+    Returns:
+    - Overall completion percentage
+    - Per-section progress with status
+    - Count of sections by status (not started, in progress, completed)
+    """
+    logger.info(
+        "assessment_progress_request",
+        child_id=child_id
+    )
+    
+    try:
+        # Verify child exists
+        child = await db.get(Child, child_id)
+        
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Child with id {child_id} not found"
+            )
+        
+        # Calculate child's age in months
+        child_age_months = calculate_age(child.date_of_birth)
+        
+        # Get all active sections
+        sections_result = await db.execute(
+            select(AssessmentSection)
+            .where(AssessmentSection.is_active == True)
+            .order_by(AssessmentSection.order_number)
+        )
+        all_sections = sections_result.scalars().all()
+        
+        # Get all responses for this child
+        responses_result = await db.execute(
+            select(AssessmentResponse)
+            .where(AssessmentResponse.child_id == child_id)
+        )
+        responses = responses_result.scalars().all()
+        
+        # Create a map of section_id to response
+        response_map = {r.section_id: r for r in responses}
+        
+        # Build section progress list
+        section_progress_list = []
+        sections_not_started = 0
+        sections_in_progress = 0
+        sections_completed = 0
+        total_completion = 0.0
+        
+        for section in all_sections:
+            response = response_map.get(section.id)
+            
+            if not response:
+                # Section not started
+                # Get total questions for this section and age
+                questions_result = await db.execute(
+                    select(func.count(AssessmentQuestion.id))
+                    .where(
+                        AssessmentQuestion.section_id == section.id,
+                        AssessmentQuestion.min_age_months <= child_age_months,
+                        AssessmentQuestion.max_age_months >= child_age_months
+                    )
+                )
+                total_questions = questions_result.scalar() or 0
+                
+                section_progress_list.append(SectionProgress(
+                    section_id=section.id,
+                    section_title=section.title,
+                    response_id=None,
+                    status="NOT_STARTED",
+                    total_questions=total_questions,
+                    answered_questions=0,
+                    unanswered_questions=total_questions,
+                    completion_percentage=0.0,
+                    created_at=None,
+                    completed_at=None
+                ))
+                sections_not_started += 1
+            else:
+                # Section has a response
+                # Get total questions for this section and age
+                questions_result = await db.execute(
+                    select(func.count(AssessmentQuestion.id))
+                    .where(
+                        AssessmentQuestion.section_id == section.id,
+                        AssessmentQuestion.min_age_months <= child_age_months,
+                        AssessmentQuestion.max_age_months >= child_age_months
+                    )
+                )
+                total_questions = questions_result.scalar() or 0
+                
+                # Get count of answered questions
+                answered_result = await db.execute(
+                    select(func.count(AssessmentQuestionAnswer.id))
+                    .where(AssessmentQuestionAnswer.response_id == response.id)
+                )
+                answered_questions = answered_result.scalar() or 0
+                
+                # Calculate unanswered from the stored list
+                unanswered_questions = len(response.unanswered_questions or [])
+                
+                # Calculate completion percentage
+                completion_pct = (
+                    (answered_questions / total_questions * 100)
+                    if total_questions > 0
+                    else 0.0
+                )
+                
+                section_progress_list.append(SectionProgress(
+                    section_id=section.id,
+                    section_title=section.title,
+                    response_id=response.id,
+                    status=response.status.value,
+                    total_questions=total_questions,
+                    answered_questions=answered_questions,
+                    unanswered_questions=unanswered_questions,
+                    completion_percentage=round(completion_pct, 2),
+                    created_at=response.created_at,
+                    completed_at=response.completed_at
+                ))
+                
+                # Count by status
+                if response.status == AssessmentStatus.NOT_STARTED:
+                    sections_not_started += 1
+                elif response.status == AssessmentStatus.IN_PROGRESS:
+                    sections_in_progress += 1
+                elif response.status == AssessmentStatus.COMPLETED:
+                    sections_completed += 1
+                
+                # Add to total completion
+                total_completion += completion_pct
+        
+        # Calculate overall completion percentage
+        overall_completion = (
+            total_completion / len(all_sections)
+            if len(all_sections) > 0
+            else 0.0
+        )
+        
+        logger.info(
+            "assessment_progress_calculated",
+            child_id=child_id,
+            total_sections=len(all_sections),
+            not_started=sections_not_started,
+            in_progress=sections_in_progress,
+            completed=sections_completed,
+            overall_completion=round(overall_completion, 2)
+        )
+        
+        return AssessmentProgressResponse(
+            child_id=child_id,
+            total_sections=len(all_sections),
+            sections_not_started=sections_not_started,
+            sections_in_progress=sections_in_progress,
+            sections_completed=sections_completed,
+            overall_completion_percentage=round(overall_completion, 2),
+            section_progress=section_progress_list
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "assessment_progress_error",
+            child_id=child_id,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch assessment progress: {str(e)}"
         )

@@ -11,6 +11,7 @@ from db.base import Base
 from db.models.mixins import TimestampMixin
 
 class AssessmentStatus(str, PyEnum):
+    NOT_STARTED = "NOT_STARTED"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
 
@@ -136,7 +137,7 @@ class AssessmentResponse(Base, TimestampMixin):
 
     status: Mapped[AssessmentStatus] = mapped_column(
         Enum(AssessmentStatus, name="assessment_status", schema="assessment"),
-        default=AssessmentStatus.IN_PROGRESS,
+        default=AssessmentStatus.NOT_STARTED,
         nullable=False
     )
 
@@ -153,6 +154,14 @@ class AssessmentResponse(Base, TimestampMixin):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime,
         nullable=True
+    )
+
+    unanswered_questions: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default='[]',
+        comment="Array of question objects that were not answered in the conversation"
     )
 
     # Relationships

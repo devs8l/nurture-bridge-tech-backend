@@ -83,6 +83,7 @@ class ResponseResponse(ResponseBase):
     total_score: Optional[int] = None
     max_possible_score: Optional[int] = None
     completed_at: Optional[datetime] = None
+    unanswered_questions: List[dict] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -124,11 +125,7 @@ class AnswerResponse(AnswerBase):
 class ConversationSubmitRequest(BaseModel):
     """Schema for submitting conversation-based assessment answers."""
     response_id: str = Field(..., description="Assessment response ID")
-    child_age_months: int = Field(..., description="Child's age in months")
     conversation: List[dict] = Field(..., description="Voice conversation as list of messages")
-    questions: List[dict] = Field(..., description="List of questions to map")
-    section_id: str = Field(..., description="Section ID for completion checking")
-    child_id: str = Field(..., description="Child ID for the assessment")
 
 
 class ConversationSubmitResponse(BaseModel):
@@ -142,5 +139,36 @@ class ConversationSubmitResponse(BaseModel):
     section_complete: bool
     completion_percentage: float
     unmapped_questions: List[str] = Field(default_factory=list)
+    mapped_answers: List[dict] = Field(default_factory=list, description="Question-answer pairs without scores")
     message: str
 
+
+# ============================================================================
+# PROGRESS SCHEMAS
+# ============================================================================
+
+class SectionProgress(BaseModel):
+    """Schema for individual section progress."""
+    section_id: str
+    section_title: str
+    response_id: Optional[str] = None
+    status: str
+    total_questions: int
+    answered_questions: int
+    unanswered_questions: int
+    completion_percentage: float
+    created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
+class AssessmentProgressResponse(BaseModel):
+    """Schema for overall assessment progress."""
+    child_id: str
+    total_sections: int
+    sections_not_started: int
+    sections_in_progress: int
+    sections_completed: int
+    overall_completion_percentage: float
+    section_progress: List[SectionProgress]
+    
+    model_config = ConfigDict(from_attributes=True)
