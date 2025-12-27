@@ -164,6 +164,13 @@ class AssessmentResponse(Base, TimestampMixin):
         comment="Array of question objects that were not answered in the conversation"
     )
 
+    assessment_language: Mapped[str] = mapped_column(
+        String(50),
+        default="ENGLISH",
+        nullable=False,
+        server_default="ENGLISH"
+    )
+
     # Relationships
     child: Mapped["Child"] = relationship("Child", back_populates="responses")
     section: Mapped["AssessmentSection"] = relationship("AssessmentSection")
@@ -206,6 +213,12 @@ class AssessmentQuestionAnswer(Base, TimestampMixin):
         Text,
         nullable=False,
         comment="What the parent actually selected/wrote"
+    )
+
+    translated_answer: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="English translation of the answer if provided in another language"
     )
 
     answer_bucket: Mapped[str] = mapped_column(

@@ -31,3 +31,4 @@ class TokenResponse(BaseSchema):
     role: str  # User's role
     tenant_id: Optional[str] = None  # User's tenant ID (None for SUPER_ADMIN)
     email: str  # User's email
+    isChildCreated: Optional[str] = None  # For parents: child ID if they have created a child, null otherwise

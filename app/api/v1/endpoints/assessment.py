@@ -601,6 +601,7 @@ async def submit_conversation_answers(
                     response_id=submit_data.response_id,
                     question_id=answer_data.get("question_id"),
                     raw_answer=answer_data.get("raw_answer", ""),
+                    translated_answer=answer_data.get("eng_translated_answer"),
                     answer_bucket=answer_data.get("answer_bucket", "NOT_OBSERVED"),
                     score=answer_data.get("score", 0)
                 )
@@ -816,6 +817,7 @@ async def get_assessment_progress(
                     answered_questions=0,
                     unanswered_questions=total_questions,
                     completion_percentage=0.0,
+                    assessment_language="ENGLISH",
                     created_at=None,
                     completed_at=None
                 ))
@@ -859,6 +861,7 @@ async def get_assessment_progress(
                     answered_questions=answered_questions,
                     unanswered_questions=unanswered_questions,
                     completion_percentage=round(completion_pct, 2),
+                    assessment_language=response.assessment_language,
                     created_at=response.created_at,
                     completed_at=response.completed_at
                 ))
