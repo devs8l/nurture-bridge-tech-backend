@@ -69,6 +69,7 @@ class ResponseBase(BaseModel):
     """Base schema for assessment response."""
     child_id: str
     section_id: str
+    assessment_language: str = Field(default="ENGLISH")
 
 
 class ResponseCreate(ResponseBase):
@@ -99,6 +100,7 @@ class AnswerBase(BaseModel):
     response_id: str
     question_id: str
     raw_answer: str
+    translated_answer: Optional[str] = None
     answer_bucket: str = Field(..., max_length=50)
     score: int
 
@@ -157,6 +159,7 @@ class SectionProgress(BaseModel):
     answered_questions: int
     unanswered_questions: int
     completion_percentage: float
+    assessment_language: str = Field(default="ENGLISH")
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 

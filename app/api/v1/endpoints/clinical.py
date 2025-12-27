@@ -350,6 +350,14 @@ async def create_child(
             detail="Parent profile not found"
         )
     
+    # Check if parent already has a child
+    existing_children = await service.get_parent_children(db, parent_id=str(parent.id))
+    if existing_children:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already registered a child. Only one child is allowed per parent account."
+        )
+    
     return await service.create_child(
         db,
         child_data=child_data,
@@ -454,15 +462,29 @@ async def list_children(
 ):
     """
     List all children in tenant.
-    Role: TENANT_ADMIN or HOD.
+    Role: TENANT_ADMIN, HOD, or PARENT.
+    - TENANT_ADMIN/HOD: Returns all children in tenant
+    - PARENT: Returns only their own children
     """
+    service = ClinicalService()
+    
+    # If user is a parent, return only their children
+    if current_user.role == UserRole.PARENT:
+        parent = await service.get_parent_by_user_id(db, user_id=str(current_user.id))
+        if not parent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent profile not found"
+            )
+        return await service.get_parent_children(db, parent_id=str(parent.id))
+    
+    # For TENANT_ADMIN and HOD, return all children in tenant
     if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.HOD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only hospital staff can access this endpoint"
+            detail="Only hospital staff and parents can access this endpoint"
         )
     
-    service = ClinicalService()
     return await service.list_children_in_tenant(
         db,
         tenant_id=str(current_user.tenant_id),

@@ -45,6 +45,7 @@ class DoctorRepo(BaseRepository[Doctor, DoctorUpdate, DoctorUpdate]):
         """Get all parents assigned to this doctor."""
         query = (
             select(Parent)
+            .options(selectinload(Parent.user))
             .where(Parent.assigned_doctor_id == doctor_id)
             .where(Parent.is_deleted == False)
         )
@@ -150,7 +151,7 @@ class ParentRepo(BaseRepository[Parent, ParentUpdate, ParentUpdate]):
     
     async def get_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Parent]:
         """Get parent by their user account ID."""
-        query = select(Parent).where(Parent.user_id == user_id)
+        query = select(Parent).options(selectinload(Parent.user)).where(Parent.user_id == user_id)
         result = await db.execute(query)
         return result.scalars().first()
     
@@ -158,6 +159,7 @@ class ParentRepo(BaseRepository[Parent, ParentUpdate, ParentUpdate]):
         """Get all parents assigned to a specific doctor."""
         query = (
             select(Parent)
+            .options(selectinload(Parent.user), selectinload(Parent.children))
             .where(Parent.assigned_doctor_id == doctor_id)
             .where(Parent.is_deleted == False)
             .offset(skip)
@@ -170,6 +172,7 @@ class ParentRepo(BaseRepository[Parent, ParentUpdate, ParentUpdate]):
         """Get all parents in a tenant."""
         query = (
             select(Parent)
+            .options(selectinload(Parent.user), selectinload(Parent.children))
             .where(Parent.tenant_id == tenant_id)
             .where(Parent.is_deleted == False)
             .offset(skip)

@@ -350,10 +350,14 @@ For each question:
 2. Normalize it into an answer_bucket
 3. Assign a numeric score (0–4)
 4. Provide brief clinical justification
-5. If parent does not answer a question and tries to skip it or ends conversation prematurely, DO NOT CONSIDER IT AS ANSWER AND DO NOT MAP IT TO ANY QUESTION.
-6. Analyze the answer and check if it makes in context of the question and is a valid answer, that is if it answers the question which was asked then map it.
+5. If answers and questions and in any other language other than English, then translate it to English and then map it to the question.
+6. If the answers are already in English then raw_answer and eng_translated_answer will be same,any of them should not be empty.
+7. If parent does not answer a question and tries to skip it or ends conversation prematurely, DO NOT CONSIDER IT AS ANSWER AND DO NOT MAP IT TO ANY QUESTION.
+8. Analyze the answer and check if it makes in context of the question and is a valid answer, that is if it answers the question which was asked then map it.
+
 
 Return ONLY valid JSON with the EXACT structure below.
+
 
 OUTPUT FORMAT (STRICT JSON):
 {{
@@ -361,6 +365,7 @@ OUTPUT FORMAT (STRICT JSON):
     {{
       "question_id": "string",
       "raw_answer": "string",
+      "eng_translated_answer": "string",
       "answer_bucket": "YES|SOMETIMES|NO|NOT_OBSERVED",
       "score": 0,
       "confidence": 0.0,

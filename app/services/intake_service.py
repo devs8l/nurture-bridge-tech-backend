@@ -320,3 +320,94 @@ class IntakeService:
     ) -> List[IntakeSection]:
         """Get complete intake form structure with all sections and questions."""
         return await self.section_repo.get_all_active_with_questions(db)
+    
+    # ========================================================================
+    # CHILD DETAILS
+    # ========================================================================
+    
+    def _convert_question_to_attribute(self, question_text: str) -> str:
+        """
+        Convert question text to snake_case attribute name.
+        Examples:
+            "Mother's full name" -> "mother_full_name"
+            "Father's email address" -> "father_email_address"
+            "Are the parents living together?" -> "are_the_parents_living_together"
+        """
+        import re
+        # Remove special characters and replace with spaces
+        text = re.sub(r"[^\w\s]", "", question_text)
+        # Convert to lowercase and replace spaces with underscores
+        text = text.lower().strip()
+        text = re.sub(r"\s+", "_", text)
+        return text
+    
+    async def get_child_details(
+        self,
+        db: AsyncSession,
+        child_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get child's intake response with all answers mapped to questions.
+        Returns a dictionary with question attribute names as keys.
+        """
+        # Get the most recent response for the child
+        responses = await self.response_repo.get_by_child(db, child_id)
+        
+        if not responses:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No intake response found for this child"
+            )
+        
+        # Get the most recent response
+        response = responses[0]
+        
+        # Get response with answers
+        response_with_answers = await self.response_repo.get_by_id_with_answers(db, str(response.id))
+        
+        # Build the mapped questions dictionary
+        questions_dict = {}
+        
+        logger.info(f"Processing {len(response_with_answers.answers)} answers for child {child_id}")
+        
+        for answer in response_with_answers.answers:
+            # Get the question details
+            question = await self.question_repo.get_by_id(db, str(answer.question_id))
+            
+            if question:
+                # Convert question text to attribute name
+                attribute_name = self._convert_question_to_attribute(question.text)
+                
+                # Add to dictionary
+                questions_dict[attribute_name] = {
+                    "question_text": question.text,
+                    "question_id": str(question.id),
+                    "answer": answer.raw_answer,
+                    "answer_id": str(answer.id)
+                }
+            else:
+                # Log warning if question not found but still include the answer
+                logger.warning(f"Question {answer.question_id} not found for answer {answer.id}")
+                # Use question_id as fallback attribute name
+                attribute_name = f"question_{str(answer.question_id).replace('-', '_')}"
+                questions_dict[attribute_name] = {
+                    "question_text": f"Question ID: {answer.question_id}",
+                    "question_id": str(answer.question_id),
+                    "answer": answer.raw_answer,
+                    "answer_id": str(answer.id)
+                }
+        
+        logger.info(f"Mapped {len(questions_dict)} questions for child {child_id}")
+        
+        # Build the response
+        result = {
+            "child_id": str(response.child_id),
+            "response_id": str(response.id),
+            "status": response.status,
+            "started_at": response.started_at,
+            "completed_at": response.completed_at,
+            "questions": questions_dict
+        }
+        
+        return result
+
