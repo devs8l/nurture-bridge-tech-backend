@@ -175,3 +175,32 @@ class IntakeSectionWithQuestions(IntakeSectionResponse):
 class IntakeFormStructure(BaseSchema):
     """Complete intake form structure with sections and questions."""
     sections: List[IntakeSectionWithQuestions]
+
+
+# ============================================================================
+# CHILD DETAILS SCHEMAS
+# ============================================================================
+
+class MappedQuestionAnswer(BaseSchema):
+    """Schema for a question-answer pair with attribute name."""
+    attribute_name: str
+    question_text: str
+    question_id: UUID
+    answer: Optional[str] = None
+    answer_id: Optional[UUID] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class ChildDetailsResponse(BaseSchema):
+    """Schema for child details with mapped question-answers."""
+    child_id: UUID
+    response_id: UUID
+    status: IntakeStatus
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    questions: Dict[str, Any] = Field(default_factory=dict, description="Mapped question-answer pairs with attribute names as keys")
+    
+    class Config:
+        from_attributes = True

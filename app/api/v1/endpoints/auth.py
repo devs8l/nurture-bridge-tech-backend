@@ -136,8 +136,34 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    
+    # Create base token response
+    token_response = service.create_tokens(
+        user_id=str(user.id), 
+        email=user.email, 
+        role=user.role.value, 
+        name=user.name, 
+        tenant_id=str(user.tenant_id) if user.tenant_id else None
+    )
+    
+    # For parents, check if they have created any children
+    if user.role == UserRole.PARENT:
+        from app.repositories.clinical_repo import ParentRepo
+        parent_repo = ParentRepo()
+        parent = await parent_repo.get_by_user_id(db, user_id=str(user.id))
         
-    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value, name=user.name, tenant_id=str(user.tenant_id) if user.tenant_id else None)
+        if parent:
+            # Check if parent has any children and get the first child's ID
+            from sqlalchemy import select
+            from db.models.clinical import Child
+            stmt = select(Child).where(Child.parent_id == parent.id).limit(1)
+            result = await db.execute(stmt)
+            child = result.scalar_one_or_none()
+            token_response["isChildCreated"] = str(child.id) if child else None
+        else:
+            token_response["isChildCreated"] = None
+    
+    return token_response
 
 @router.post("/access-token", response_model=TokenResponse)
 async def login_for_access_token(
@@ -159,7 +185,33 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return service.create_tokens(user_id=str(user.id), email=user.email, role=user.role.value, name=user.name, tenant_id=str(user.tenant_id) if user.tenant_id else None)
+    # Create base token response
+    token_response = service.create_tokens(
+        user_id=str(user.id), 
+        email=user.email, 
+        role=user.role.value, 
+        name=user.name, 
+        tenant_id=str(user.tenant_id) if user.tenant_id else None
+    )
+    
+    # For parents, check if they have created any children
+    if user.role == UserRole.PARENT:
+        from app.repositories.clinical_repo import ParentRepo
+        parent_repo = ParentRepo()
+        parent = await parent_repo.get_by_user_id(db, user_id=str(user.id))
+        
+        if parent:
+            # Check if parent has any children and get the first child's ID
+            from sqlalchemy import select
+            from db.models.clinical import Child
+            stmt = select(Child).where(Child.parent_id == parent.id).limit(1)
+            result = await db.execute(stmt)
+            child = result.scalar_one_or_none()
+            token_response["isChildCreated"] = str(child.id) if child else None
+        else:
+            token_response["isChildCreated"] = None
+    
+    return token_response
 
 @router.post("/invitations/{token}/accept", response_model=UserResponse)
 async def accept_invitation(

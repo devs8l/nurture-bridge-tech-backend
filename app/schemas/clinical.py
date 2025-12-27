@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.base import BaseSchema
 from db.models.clinical import Gender
+from db.models.auth import UserStatus
 
 # ============================================================================
 # DOCTOR SCHEMAS
@@ -113,8 +114,23 @@ class ParentResponse(BaseSchema):
     last_name: str
     assigned_doctor_id: Optional[UUID] = None
     phone_number: Optional[str] = None
+    email: str
+    status: UserStatus
+    children: List["ChildResponse"] = []
     created_at: datetime
     updated_at: datetime
+    
+    @model_validator(mode='before')
+    @classmethod
+    def extract_user_fields(cls, data):
+        """Extract email and status from the user relationship."""
+        if hasattr(data, 'user') and data.user:
+            # Set email and status from the user object
+            if not hasattr(data, 'email'):
+                data.email = data.user.email
+            if not hasattr(data, 'status'):
+                data.status = data.user.status
+        return data
     
     class Config:
         from_attributes = True

@@ -11,7 +11,7 @@ from app.schemas.intake import (
     IntakeQuestionCreate, IntakeQuestionUpdate, IntakeQuestionResponse,
     IntakeResponseCreate, IntakeResponseUpdate, IntakeResponseResponse, IntakeResponseWithAnswers,
     IntakeAnswerCreate, IntakeAnswerResponse, BulkAnswerCreate,
-    IntakeFormStructure
+    IntakeFormStructure, ChildDetailsResponse
 )
 from db.models.auth import User, UserRole
 
@@ -400,3 +400,26 @@ async def get_intake_form_structure(
     service = IntakeService()
     structure = await service.get_intake_form_structure(db)
     return structure
+
+
+@router.get("/child_details", response_model=ChildDetailsResponse)
+async def get_child_details(
+    child_id: UUID = Query(..., description="Child ID to fetch intake details for"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get child's intake response with all answers mapped to questions.
+    Each question is represented by an attribute name derived from the question text.
+    Example: "Mother's full name" becomes "mother_full_name".
+    Role: DOCTOR, PARENT, RECEPTIONIST, HOD.
+    """
+    if current_user.role not in [UserRole.DOCTOR, UserRole.PARENT, UserRole.RECEPTIONIST, UserRole.HOD]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions"
+        )
+    
+    service = IntakeService()
+    child_details = await service.get_child_details(db, str(child_id))
+    return child_details
