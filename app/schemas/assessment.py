@@ -120,6 +120,38 @@ class AnswerResponse(AnswerBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DetailedAnswerResponse(BaseModel):
+    """Schema for detailed answer response with question information."""
+    id: str
+    question_id: str
+    question_text: str
+    raw_answer: str
+    translated_answer: Optional[str] = None
+    answer_bucket: str
+    score: int
+    answered_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DetailedResponseResponse(BaseModel):
+    """Schema for detailed assessment response with all answers and total score."""
+    id: str
+    child_id: str
+    section_id: str
+    section_title: str
+    status: str
+    assessment_language: str
+    total_score: int
+    max_possible_score: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    answers: List[DetailedAnswerResponse]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ============================================================================
 # CONVERSATION SUBMIT SCHEMAS
 # ============================================================================

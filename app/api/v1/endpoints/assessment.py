@@ -32,7 +32,9 @@ from app.schemas.assessment import (
     ConversationSubmitRequest,
     ConversationSubmitResponse,
     SectionProgress,
-    AssessmentProgressResponse
+    AssessmentProgressResponse,
+    DetailedResponseResponse,
+    DetailedAnswerResponse
 )
 
 logger = get_logger(__name__)
@@ -361,6 +363,83 @@ async def get_responses(
     query = query.order_by(AssessmentResponse.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/responses/detail", response_model=DetailedResponseResponse)
+async def get_response_detail(
+    child_id: str,
+    section_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed assessment response by child_id and section_id.
+    Returns response details with all question-answer mappings and total score.
+    """
+    logger.info(
+        "fetching_detailed_response",
+        child_id=child_id,
+        section_id=section_id
+    )
+    
+    # Fetch response with answers and questions eagerly loaded
+    result = await db.execute(
+        select(AssessmentResponse)
+        .options(
+            selectinload(AssessmentResponse.answers).selectinload(AssessmentQuestionAnswer.question),
+            selectinload(AssessmentResponse.section)
+        )
+        .where(
+            AssessmentResponse.child_id == child_id,
+            AssessmentResponse.section_id == section_id
+        )
+    )
+    response = result.scalar_one_or_none()
+    
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Response not found for child_id={child_id} and section_id={section_id}"
+        )
+    
+    # Calculate total score from all answers
+    total_score = sum(answer.score for answer in response.answers)
+    
+    # Build detailed answer list with question information
+    detailed_answers = [
+        DetailedAnswerResponse(
+            id=str(answer.id),
+            question_id=str(answer.question_id),
+            question_text=answer.question.text,
+            raw_answer=answer.raw_answer,
+            translated_answer=answer.translated_answer,
+            answer_bucket=answer.answer_bucket,
+            score=answer.score,
+            answered_at=answer.answered_at
+        )
+        for answer in response.answers
+    ]
+    
+    logger.info(
+        "detailed_response_fetched",
+        response_id=response.id,
+        total_answers=len(detailed_answers),
+        total_score=total_score
+    )
+    
+    return DetailedResponseResponse(
+        id=str(response.id),
+        child_id=str(response.child_id),
+        section_id=str(response.section_id),
+        section_title=response.section.title,
+        status=response.status.value,
+        assessment_language=response.assessment_language,
+        total_score=total_score,
+        max_possible_score=response.max_possible_score,
+        completed_at=response.completed_at,
+        answers=detailed_answers,
+        created_at=response.created_at,
+        updated_at=response.updated_at
+    )
 
 
 @router.get("/responses/{response_id}", response_model=ResponseResponse)
