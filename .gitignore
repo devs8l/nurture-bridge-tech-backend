@@ -197,3 +197,4 @@ docs/_build/
 node_modules/
 nbt_schema
 misc/
+documentation/
