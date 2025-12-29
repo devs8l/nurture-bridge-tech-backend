@@ -85,6 +85,7 @@ class ResponseResponse(ResponseBase):
     max_possible_score: Optional[int] = None
     completed_at: Optional[datetime] = None
     unanswered_questions: List[dict] = Field(default_factory=list)
+    last_conversation_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -136,6 +137,7 @@ class ConversationSubmitResponse(BaseModel):
     response_id: str
     section_id: str
     child_id: str
+    conversation_log_id: str
     answers_created: int
     total_questions: int
     section_complete: bool

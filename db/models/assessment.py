@@ -12,6 +12,7 @@ from db.models.mixins import TimestampMixin
 
 class AssessmentStatus(str, PyEnum):
     NOT_STARTED = "NOT_STARTED"
+    PROCESSING = "PROCESSING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
 
@@ -109,12 +110,59 @@ class AssessmentQuestion(Base, TimestampMixin):
         return f"<AssessmentQuestion(id={self.id}, text={self.text[:20]}...)>"
 
 
+class ConversationLog(Base):
+    """
+    Stores raw conversation data from assessment submissions.
+    Immutable - logs are never updated, only created.
+    """
+    __tablename__ = "conversation_logs"
+    __table_args__ = {"schema": "assessment"}
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False
+    )
+
+    response_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("assessment.responses.id"),
+        nullable=False
+    )
+
+    conversation: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        comment="Raw conversation data from submission"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    # Relationships
+    response: Mapped["AssessmentResponse"] = relationship(
+        "AssessmentResponse", 
+        back_populates="conversation_logs",
+        foreign_keys=[response_id]
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConversationLog(id={self.id}, response_id={self.response_id})>"
+
+
 class AssessmentResponse(Base, TimestampMixin):
     """
     One assessment session for a child.
     """
     __tablename__ = "responses"
-    __table_args__ = {"schema": "assessment"}
+    __table_args__ = (
+        UniqueConstraint('child_id', 'section_id', name='uq_child_section_response'),
+        {"schema": "assessment"}
+    )
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
@@ -171,10 +219,21 @@ class AssessmentResponse(Base, TimestampMixin):
         server_default="ENGLISH"
     )
 
+    last_conversation_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        nullable=True,
+        comment="ID of the most recent conversation log, overwritten on resume (not a FK to avoid circular dependency)"
+    )
+
     # Relationships
     child: Mapped["Child"] = relationship("Child", back_populates="responses")
     section: Mapped["AssessmentSection"] = relationship("AssessmentSection")
     answers: Mapped[List["AssessmentQuestionAnswer"]] = relationship("AssessmentQuestionAnswer", back_populates="response")
+    conversation_logs: Mapped[List["ConversationLog"]] = relationship(
+        "ConversationLog", 
+        back_populates="response",
+        foreign_keys="[ConversationLog.response_id]"
+    )
 
     def __repr__(self) -> str:
         return f"<AssessmentResponse(id={self.id}, status={self.status})>"
