@@ -17,7 +17,8 @@ from db.models.assessment import (
     AssessmentQuestion,
     AssessmentResponse,
     AssessmentQuestionAnswer,
-    AssessmentStatus
+    AssessmentStatus,
+    ConversationLog
 )
 from db.models.clinical import Child
 from app.schemas.assessment import (
@@ -282,6 +283,24 @@ async def create_response(
     # Calculate child's age in months
     child_age_months = calculate_age(child.date_of_birth)
     
+    # Check if a response already exists for this child and section
+    existing_response_result = await db.execute(
+        select(AssessmentResponse).where(
+            AssessmentResponse.child_id == response_data.child_id,
+            AssessmentResponse.section_id == response_data.section_id
+        )
+    )
+    existing_response = existing_response_result.scalar_one_or_none()
+    
+    if existing_response:
+        logger.info(
+            "response_already_exists",
+            child_id=response_data.child_id,
+            section_id=response_data.section_id,
+            existing_response_id=existing_response.id
+        )
+        return existing_response
+    
     logger.info(
         "creating_response",
         child_id=response_data.child_id,
@@ -545,10 +564,44 @@ async def submit_conversation_answers(
             unanswered_question_count=len(unanswered_questions)
         )
         
+        # STEP 1: Store raw conversation in conversation_logs table
+        from db.models.assessment import ConversationLog
+        
+        conversation_log = ConversationLog(
+            response_id=submit_data.response_id,
+            conversation=submit_data.conversation
+        )
+        db.add(conversation_log)
+        await db.flush()  # Flush to get the ID
+        
+        logger.info(
+            "conversation_log_created",
+            response_id=submit_data.response_id,
+            conversation_log_id=conversation_log.id
+        )
+        
+        # STEP 2: Update response's last_conversation_id (overwrites if exists)
+        response.last_conversation_id = conversation_log.id
+        await db.commit()
+        
+        logger.info(
+            "conversation_log_stored",
+            response_id=submit_data.response_id,
+            conversation_log_id=conversation_log.id
+        )
+        
         # Get AI service
         ai_service = get_gemini_service() 
+
         
         if not ai_service.is_available():
+            # Set PROCESSING status on error
+            response.status = AssessmentStatus.PROCESSING
+            await db.commit()
+            logger.error(
+                "ai_service_unavailable",
+                response_id=submit_data.response_id
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="AI service is not available. Please configure GEMINI_API_KEY."
@@ -569,6 +622,9 @@ async def submit_conversation_answers(
         )
         
         if not ai_result.get("success"):
+            # Set PROCESSING status on AI mapping failure
+            response.status = AssessmentStatus.PROCESSING
+            await db.commit()
             logger.error(
                 "ai_mapping_failed",
                 response_id=submit_data.response_id,
@@ -679,7 +735,8 @@ async def submit_conversation_answers(
         if section_complete and response.status != AssessmentStatus.COMPLETED:
             response.status = AssessmentStatus.COMPLETED
             response.completed_at = datetime.utcnow()
-        elif response.status == AssessmentStatus.NOT_STARTED and answers_created > 0:
+        elif answers_created > 0 and response.status in (AssessmentStatus.NOT_STARTED, AssessmentStatus.PROCESSING):
+            # Transition from NOT_STARTED or PROCESSING (error recovery) to IN_PROGRESS
             response.status = AssessmentStatus.IN_PROGRESS
         
         await db.commit()
@@ -708,6 +765,7 @@ async def submit_conversation_answers(
             response_id=submit_data.response_id,
             section_id=section_id,
             child_id=child_id,
+            conversation_log_id=conversation_log.id,
             answers_created=answers_created,
             total_questions=total_applicable_questions,
             section_complete=section_complete,
@@ -720,6 +778,13 @@ async def submit_conversation_answers(
     except HTTPException:
         raise
     except Exception as e:
+        # Set PROCESSING status on any unexpected error during AI processing
+        try:
+            response.status = AssessmentStatus.PROCESSING
+            await db.commit()
+        except:
+            pass  # If commit fails, at least log the error
+        
         logger.error(
             "conversation_submit_error",
             response_id=submit_data.response_id,
