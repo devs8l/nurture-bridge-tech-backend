@@ -8,6 +8,32 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================================
+# POOL SCHEMAS
+# ============================================================================
+
+class PoolBase(BaseModel):
+    """Base schema for assessment pool."""
+    title: str = Field(..., max_length=255)
+    description: Optional[str] = None
+    order_number: int = Field(default=0)
+    is_active: bool = Field(default=True)
+
+
+class PoolCreate(PoolBase):
+    """Schema for creating an assessment pool."""
+    pass
+
+
+class PoolResponse(PoolBase):
+    """Schema for assessment pool response."""
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
 # SECTION SCHEMAS
 # ============================================================================
 
@@ -17,6 +43,7 @@ class SectionBase(BaseModel):
     description: Optional[str] = None
     order_number: int = Field(default=0)
     is_active: bool = Field(default=True)
+    pool_id: Optional[str] = Field(default=None, description="Optional pool identifier")
 
 
 class SectionCreate(SectionBase):
@@ -121,6 +148,38 @@ class AnswerResponse(AnswerBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DetailedAnswerResponse(BaseModel):
+    """Schema for detailed answer response with question information."""
+    id: str
+    question_id: str
+    question_text: str
+    raw_answer: str
+    translated_answer: Optional[str] = None
+    answer_bucket: str
+    score: int
+    answered_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DetailedResponseResponse(BaseModel):
+    """Schema for detailed assessment response with all answers and total score."""
+    id: str
+    child_id: str
+    section_id: str
+    section_title: str
+    status: str
+    assessment_language: str
+    total_score: int
+    max_possible_score: Optional[int] = None
+    completed_at: Optional[datetime] = None
+    answers: List[DetailedAnswerResponse]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ============================================================================
 # CONVERSATION SUBMIT SCHEMAS
 # ============================================================================
@@ -155,6 +214,7 @@ class SectionProgress(BaseModel):
     """Schema for individual section progress."""
     section_id: str
     section_title: str
+    pool_id: Optional[str] = None
     response_id: Optional[str] = None
     status: str
     total_questions: int
