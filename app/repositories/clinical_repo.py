@@ -190,6 +190,44 @@ class ParentRepo(BaseRepository[Parent, ParentUpdate, ParentUpdate]):
         )
         result = await db.execute(query)
         return list(result.scalars().all())
+    
+    async def assign_doctor(
+        self, 
+        db: AsyncSession, 
+        *, 
+        parent_id: str, 
+        doctor_id: str
+    ) -> Parent:
+        """
+        Assign or reassign a doctor to a parent.
+        Updates the assigned_doctor_id field.
+        """
+        query = (
+            select(Parent)
+            .options(selectinload(Parent.user), selectinload(Parent.children))
+            .where(Parent.id == parent_id)
+        )
+        result = await db.execute(query)
+        parent = result.scalars().first()
+        
+        if not parent:
+            return None
+        
+        parent.assigned_doctor_id = doctor_id
+        db.add(parent)
+        await db.commit()
+        
+        # Reload parent with relationships eagerly loaded
+        # (refresh loses the eager loading context)
+        reload_query = (
+            select(Parent)
+            .options(selectinload(Parent.user), selectinload(Parent.children))
+            .where(Parent.id == parent_id)
+        )
+        reload_result = await db.execute(reload_query)
+        return reload_result.scalars().first()
+
+
 
 # ============================================================================
 # CHILD REPOSITORY

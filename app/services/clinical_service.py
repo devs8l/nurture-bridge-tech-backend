@@ -329,6 +329,80 @@ class ClinicalService:
             limit=limit
         )
     
+    async def assign_doctor_to_parent(
+        self,
+        db: AsyncSession,
+        *,
+        parent_id: str,
+        doctor_id: str,
+        current_user_tenant_id: str
+    ) -> Parent:
+        """
+        Assign a doctor to a parent.
+        Validates that both parent and doctor exist in the same tenant.
+        """
+        # Validate parent exists and is in the same tenant
+        parent = await self.parent_repo.get(db, id=parent_id)
+        if not parent:
+            logger.warning("parent_not_found_for_assignment", parent_id=parent_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent not found"
+            )
+        
+        if parent.tenant_id != current_user_tenant_id:
+            logger.warning(
+                "cross_tenant_parent_assignment_attempt",
+                parent_id=parent_id,
+                parent_tenant=parent.tenant_id,
+                user_tenant=current_user_tenant_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot assign doctor to parent in different tenant"
+            )
+        
+        # Validate doctor exists and is in the same tenant
+        doctor = await self.doctor_repo.get(db, id=doctor_id)
+        if not doctor:
+            logger.warning("doctor_not_found_for_assignment", doctor_id=doctor_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Doctor not found"
+            )
+        
+        if doctor.tenant_id != current_user_tenant_id:
+            logger.warning(
+                "cross_tenant_doctor_assignment_attempt",
+                doctor_id=doctor_id,
+                doctor_tenant=doctor.tenant_id,
+                user_tenant=current_user_tenant_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot assign doctor from different tenant"
+            )
+        
+        # Assign the doctor
+        logger.info(
+            "assigning_doctor_to_parent",
+            parent_id=parent_id,
+            doctor_id=doctor_id,
+            tenant_id=current_user_tenant_id
+        )
+        updated_parent = await self.parent_repo.assign_doctor(
+            db,
+            parent_id=parent_id,
+            doctor_id=doctor_id
+        )
+        logger.info(
+            "doctor_assigned_to_parent",
+            parent_id=parent_id,
+            doctor_id=doctor_id
+        )
+        return updated_parent
+
+    
     # ========================================================================
     # CHILD METHODS
     # ========================================================================

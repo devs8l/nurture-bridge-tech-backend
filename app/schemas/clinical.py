@@ -103,6 +103,14 @@ class ParentUpdate(BaseSchema):
     """
     phone_number: Optional[str] = Field(None, max_length=50)
 
+class AssignDoctorToParent(BaseSchema):
+    """
+    Schema for assigning a doctor to a parent.
+    Used by receptionist to set/update parent's assigned doctor.
+    """
+    doctor_id: UUID
+
+
 class ParentResponse(BaseSchema):
     """
     Schema for parent profile response.
