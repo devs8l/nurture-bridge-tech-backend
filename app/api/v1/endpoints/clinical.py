@@ -9,7 +9,7 @@ from app.schemas.clinical import (
     DoctorUpdate, DoctorResponse,
     HODUpdate, HODResponse,
     ReceptionistUpdate, ReceptionistResponse,
-    ParentUpdate, ParentResponse,
+    ParentUpdate, ParentResponse, AssignDoctorToParent,
     ChildCreate, ChildUpdate, ChildResponse
 )
 from db.models.auth import User, UserRole
@@ -414,7 +414,7 @@ async def list_doctors(
     List all doctors in tenant.
     Role: TENANT_ADMIN or SUPER_ADMIN.
     """
-    if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.SUPER_ADMIN]:
+    if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.RECEPTIONIST, UserRole.HOD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can access this endpoint"
@@ -453,6 +453,34 @@ async def list_parents(
         limit=limit
     )
 
+@router.put("/parents/{parent_id}/assign-doctor", response_model=ParentResponse)
+async def assign_doctor_to_parent(
+    parent_id: str,
+    assignment_data: AssignDoctorToParent,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Assign or reassign a doctor to a parent.
+    Role: RECEPTIONIST only.
+    
+    This endpoint allows receptionists to assign a doctor to a parent during
+    onboarding or update the assignment later if needed.
+    """
+    if current_user.role != UserRole.RECEPTIONIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only receptionists can assign doctors to parents"
+        )
+    
+    service = ClinicalService()
+    return await service.assign_doctor_to_parent(
+        db,
+        parent_id=parent_id,
+        doctor_id=str(assignment_data.doctor_id),
+        current_user_tenant_id=str(current_user.tenant_id)
+    )
+
 @router.get("/children", response_model=List[ChildResponse])
 async def list_children(
     skip: int = 0,
@@ -479,7 +507,7 @@ async def list_children(
         return await service.get_parent_children(db, parent_id=str(parent.id))
     
     # For TENANT_ADMIN and HOD, return all children in tenant
-    if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.HOD]:
+    if current_user.role not in [UserRole.HOD]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only hospital staff and parents can access this endpoint"
