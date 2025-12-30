@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app_logging.logger import get_logger
 from db.base import get_db
 from db.models.assessment import (
+    AssessmentPool,
     AssessmentSection,
     AssessmentQuestion,
     AssessmentResponse,
@@ -21,6 +22,8 @@ from db.models.assessment import (
 )
 from db.models.clinical import Child
 from app.schemas.assessment import (
+    PoolCreate,
+    PoolResponse,
     SectionCreate,
     SectionResponse,
     QuestionCreate,
@@ -47,6 +50,109 @@ def calculate_age(dob):
     return age_in_months
 
 
+
+# ============================================================================
+# POOL ENDPOINTS
+# ============================================================================
+
+@router.post("/pools", response_model=PoolResponse, status_code=status.HTTP_201_CREATED)
+async def create_pool(
+    pool_data: PoolCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new assessment pool."""
+    pool = AssessmentPool(**pool_data.model_dump())
+    db.add(pool)
+    await db.commit()
+    await db.refresh(pool)
+    return pool
+
+
+@router.get("/pools", response_model=List[PoolResponse])
+async def get_pools(
+    skip: int = 0,
+    limit: int = 100,
+    is_active: bool = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all assessment pools."""
+    query = select(AssessmentPool)
+    
+    if is_active is not None:
+        query = query.where(AssessmentPool.is_active == is_active)
+    
+    query = query.order_by(AssessmentPool.order_number).offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/pools/{pool_id}", response_model=PoolResponse)
+async def get_pool(
+    pool_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific assessment pool by ID."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    return pool
+
+
+@router.put("/pools/{pool_id}", response_model=PoolResponse)
+async def update_pool(
+    pool_id: str,
+    pool_data: PoolCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an assessment pool."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    for key, value in pool_data.model_dump().items():
+        setattr(pool, key, value)
+    
+    await db.commit()
+    await db.refresh(pool)
+    return pool
+
+
+@router.delete("/pools/{pool_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pool(
+    pool_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an assessment pool."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    await db.delete(pool)
+    await db.commit()
+
+
 # ============================================================================
 # SECTION ENDPOINTS
 # ============================================================================
@@ -69,13 +175,17 @@ async def get_sections(
     skip: int = 0,
     limit: int = 100,
     is_active: bool = None,
+    pool_id: str = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all assessment sections."""
+    """Get all assessment sections, optionally filtered by pool_id."""
     query = select(AssessmentSection)
     
     if is_active is not None:
         query = query.where(AssessmentSection.is_active == is_active)
+    
+    if pool_id is not None:
+        query = query.where(AssessmentSection.pool_id == pool_id)
     
     query = query.order_by(AssessmentSection.order_number).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -890,6 +1000,7 @@ async def get_assessment_progress(
                 section_progress_list.append(SectionProgress(
                     section_id=section.id,
                     section_title=section.title,
+                    pool_id=section.pool_id,
                     response_id=None,
                     status="NOT_STARTED",
                     total_questions=total_questions,
@@ -934,6 +1045,7 @@ async def get_assessment_progress(
                 section_progress_list.append(SectionProgress(
                     section_id=section.id,
                     section_title=section.title,
+                    pool_id=section.pool_id,
                     response_id=response.id,
                     status=response.status.value,
                     total_questions=total_questions,
