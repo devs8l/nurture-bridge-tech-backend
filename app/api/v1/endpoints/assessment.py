@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app_logging.logger import get_logger
 from db.base import get_db
 from db.models.assessment import (
+    AssessmentPool,
     AssessmentSection,
     AssessmentQuestion,
     AssessmentResponse,
@@ -22,6 +23,8 @@ from db.models.assessment import (
 )
 from db.models.clinical import Child
 from app.schemas.assessment import (
+    PoolCreate,
+    PoolResponse,
     SectionCreate,
     SectionResponse,
     QuestionCreate,
@@ -33,7 +36,9 @@ from app.schemas.assessment import (
     ConversationSubmitRequest,
     ConversationSubmitResponse,
     SectionProgress,
-    AssessmentProgressResponse
+    AssessmentProgressResponse,
+    DetailedResponseResponse,
+    DetailedAnswerResponse
 )
 
 logger = get_logger(__name__)
@@ -44,6 +49,109 @@ def calculate_age(dob):
     today = date.today()
     age_in_months = (today.year - dob.year) * 12 + (today.month - dob.month)
     return age_in_months
+
+
+
+# ============================================================================
+# POOL ENDPOINTS
+# ============================================================================
+
+@router.post("/pools", response_model=PoolResponse, status_code=status.HTTP_201_CREATED)
+async def create_pool(
+    pool_data: PoolCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new assessment pool."""
+    pool = AssessmentPool(**pool_data.model_dump())
+    db.add(pool)
+    await db.commit()
+    await db.refresh(pool)
+    return pool
+
+
+@router.get("/pools", response_model=List[PoolResponse])
+async def get_pools(
+    skip: int = 0,
+    limit: int = 100,
+    is_active: bool = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all assessment pools."""
+    query = select(AssessmentPool)
+    
+    if is_active is not None:
+        query = query.where(AssessmentPool.is_active == is_active)
+    
+    query = query.order_by(AssessmentPool.order_number).offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/pools/{pool_id}", response_model=PoolResponse)
+async def get_pool(
+    pool_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific assessment pool by ID."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    return pool
+
+
+@router.put("/pools/{pool_id}", response_model=PoolResponse)
+async def update_pool(
+    pool_id: str,
+    pool_data: PoolCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an assessment pool."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    for key, value in pool_data.model_dump().items():
+        setattr(pool, key, value)
+    
+    await db.commit()
+    await db.refresh(pool)
+    return pool
+
+
+@router.delete("/pools/{pool_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pool(
+    pool_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an assessment pool."""
+    result = await db.execute(
+        select(AssessmentPool).where(AssessmentPool.id == pool_id)
+    )
+    pool = result.scalar_one_or_none()
+    
+    if not pool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Pool with id {pool_id} not found"
+        )
+    
+    await db.delete(pool)
+    await db.commit()
 
 
 # ============================================================================
@@ -68,13 +176,17 @@ async def get_sections(
     skip: int = 0,
     limit: int = 100,
     is_active: bool = None,
+    pool_id: str = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all assessment sections."""
+    """Get all assessment sections, optionally filtered by pool_id."""
     query = select(AssessmentSection)
     
     if is_active is not None:
         query = query.where(AssessmentSection.is_active == is_active)
+    
+    if pool_id is not None:
+        query = query.where(AssessmentSection.pool_id == pool_id)
     
     query = query.order_by(AssessmentSection.order_number).offset(skip).limit(limit)
     result = await db.execute(query)
@@ -380,6 +492,83 @@ async def get_responses(
     query = query.order_by(AssessmentResponse.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/responses/detail", response_model=DetailedResponseResponse)
+async def get_response_detail(
+    child_id: str,
+    section_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed assessment response by child_id and section_id.
+    Returns response details with all question-answer mappings and total score.
+    """
+    logger.info(
+        "fetching_detailed_response",
+        child_id=child_id,
+        section_id=section_id
+    )
+    
+    # Fetch response with answers and questions eagerly loaded
+    result = await db.execute(
+        select(AssessmentResponse)
+        .options(
+            selectinload(AssessmentResponse.answers).selectinload(AssessmentQuestionAnswer.question),
+            selectinload(AssessmentResponse.section)
+        )
+        .where(
+            AssessmentResponse.child_id == child_id,
+            AssessmentResponse.section_id == section_id
+        )
+    )
+    response = result.scalar_one_or_none()
+    
+    if not response:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Response not found for child_id={child_id} and section_id={section_id}"
+        )
+    
+    # Calculate total score from all answers
+    total_score = sum(answer.score for answer in response.answers)
+    
+    # Build detailed answer list with question information
+    detailed_answers = [
+        DetailedAnswerResponse(
+            id=str(answer.id),
+            question_id=str(answer.question_id),
+            question_text=answer.question.text,
+            raw_answer=answer.raw_answer,
+            translated_answer=answer.translated_answer,
+            answer_bucket=answer.answer_bucket,
+            score=answer.score,
+            answered_at=answer.answered_at
+        )
+        for answer in response.answers
+    ]
+    
+    logger.info(
+        "detailed_response_fetched",
+        response_id=response.id,
+        total_answers=len(detailed_answers),
+        total_score=total_score
+    )
+    
+    return DetailedResponseResponse(
+        id=str(response.id),
+        child_id=str(response.child_id),
+        section_id=str(response.section_id),
+        section_title=response.section.title,
+        status=response.status.value,
+        assessment_language=response.assessment_language,
+        total_score=total_score,
+        max_possible_score=response.max_possible_score,
+        completed_at=response.completed_at,
+        answers=detailed_answers,
+        created_at=response.created_at,
+        updated_at=response.updated_at
+    )
 
 
 @router.get("/responses/{response_id}", response_model=ResponseResponse)
@@ -876,6 +1065,7 @@ async def get_assessment_progress(
                 section_progress_list.append(SectionProgress(
                     section_id=section.id,
                     section_title=section.title,
+                    pool_id=section.pool_id,
                     response_id=None,
                     status="NOT_STARTED",
                     total_questions=total_questions,
@@ -920,6 +1110,7 @@ async def get_assessment_progress(
                 section_progress_list.append(SectionProgress(
                     section_id=section.id,
                     section_title=section.title,
+                    pool_id=section.pool_id,
                     response_id=response.id,
                     status=response.status.value,
                     total_questions=total_questions,

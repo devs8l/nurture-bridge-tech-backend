@@ -16,6 +16,45 @@ class AssessmentStatus(str, PyEnum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
 
+class AssessmentPool(Base, TimestampMixin):
+    """
+    Pool container that groups multiple assessment sections.
+    """
+    __tablename__ = "pools"
+    __table_args__ = {"schema": "assessment"}
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
+
+    description: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True
+    )
+
+    order_number: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<AssessmentPool(id={self.id}, title={self.title})>"
+
 class AssessmentSection(Base, TimestampMixin):
     """
     Assessment module (e.g. Social Interaction).
@@ -50,6 +89,12 @@ class AssessmentSection(Base, TimestampMixin):
         Boolean,
         default=True,
         nullable=False
+    )
+
+    pool_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        nullable=True,
+        comment="Optional pool identifier (no foreign key constraint)"
     )
 
     def __repr__(self) -> str:
