@@ -226,6 +226,20 @@ class SectionProgress(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+class PoolProgress(BaseModel):
+    """Schema for pool-level aggregated progress."""
+    pool_id: str
+    pool_title: str
+    pool_description: Optional[str] = None
+    total_sections: int
+    sections_not_started: int
+    sections_in_progress: int
+    sections_completed: int
+    pool_completion_percentage: float
+    total_questions: int
+    answered_questions: int
+
+
 class AssessmentProgressResponse(BaseModel):
     """Schema for overall assessment progress."""
     child_id: str
@@ -235,5 +249,6 @@ class AssessmentProgressResponse(BaseModel):
     sections_completed: int
     overall_completion_percentage: float
     section_progress: List[SectionProgress]
+    pool_progress: List[PoolProgress] = Field(default_factory=list, description="Aggregated progress by pool")
     
     model_config = ConfigDict(from_attributes=True)
