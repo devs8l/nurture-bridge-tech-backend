@@ -702,3 +702,367 @@ IMPORTANT:
             )
             
             raise
+
+    async def generate_pool_summary(
+        self,
+        pool_data: Dict[str, Any],
+        actor: str = "system"
+    ) -> Dict[str, Any]:
+        """
+        Generate AI summary for a specific assessment pool.
+        
+        Args:
+            pool_data: Pool data including sections, scores, and answers
+                      Example: {
+                          "pool_id": "uuid",
+                          "pool_title": "Communication Skills",
+                          "sections": [
+                              {
+                                  "section_title": "Social Interaction",
+                                  "total_score": 15,
+                                  "max_possible_score": 20,
+                                  "answers": [...]
+                              }
+                          ]
+                      }
+            actor: Actor making the request (for audit logging)
+            
+        Returns:
+            Dict containing the AI-generated summary
+        """
+        if not self.is_available():
+            logger.error("gemini_service_unavailable", actor=actor, operation="pool_summary")
+            raise ValueError("Gemini service is not configured.")
+        
+        start_time = time.time()
+        
+        prompt = f"""
+You are a pediatric development specialist AI analyzing assessment data for a specific developmental pool.
+
+POOL DATA:
+{json.dumps(pool_data, indent=2)}
+
+TASK:
+Generate a comprehensive summary for this assessment pool that includes:
+- Pool Overview: Brief overview of what this pool measures
+- Key Observations: Most important findings from all sections in this pool
+- Developmental Analysis: Analysis specific to this developmental area
+- Strengths: Positive aspects observed in this pool
+- Areas for Attention: Specific areas within this pool that need attention
+- Overall Pool Score: If applicable, contextual meaning of the score
+
+Return your response as valid JSON with this structure:
+{{
+    "pool_overview": "brief description of pool",
+    "key_observations": [
+        "observation 1",
+        "observation 2",
+        ...
+    ],
+    "developmental_analysis": "detailed analysis of this developmental area",
+    "strengths": [
+        "strength 1",
+        ...
+    ],
+    "areas_for_attention": [
+        "area 1 with specific recommendations",
+        ...
+    ],
+    "score_interpretation": "interpretation of the pool score if applicable",
+    "confidence_level": "high|medium|low"
+}}
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown formatting
+- Be thorough but concise
+- Use evidence-based developmental knowledge
+- Be sensitive and supportive in language
+- Focus on this specific pool's developmental area
+"""
+        
+        try:
+            logger.info(
+                "gemini_pool_summary_request",
+                actor=actor,
+                pool_id=pool_data.get("pool_id"),
+                pool_title=pool_data.get("pool_title")
+            )
+            
+            response = await self.generate_text(
+                prompt=prompt,
+                actor=actor,
+                temperature=0.4,
+                max_tokens=2048,
+                system_instruction="You are a pediatric development specialist providing evidence-based, compassionate assessments. Always return valid JSON."
+            )
+            
+            # Parse JSON response
+            try:
+                cleaned_response = response.strip()
+                if cleaned_response.startswith("```json"):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.startswith("```"):
+                    cleaned_response = cleaned_response[3:]
+                if cleaned_response.endswith("```"):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+                
+                parsed_result = json.loads(cleaned_response)
+                
+                duration_ms = round((time.time() - start_time) * 1000, 2)
+                
+                logger.info(
+                    "gemini_pool_summary_success",
+                    actor=actor,
+                    pool_id=pool_data.get("pool_id"),
+                    duration_ms=duration_ms
+                )
+                
+                audit_log(
+                    event_type="ai_pool_summary",
+                    actor=actor,
+                    resource="gemini_api",
+                    action="generate_pool_summary",
+                    result="success",
+                    pool_id=pool_data.get("pool_id"),
+                    duration_ms=duration_ms
+                )
+                
+                return {
+                    "success": True,
+                    "summary": parsed_result,
+                    "raw_response": response
+                }
+                
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "gemini_pool_summary_json_parse_error",
+                    actor=actor,
+                    error=str(e),
+                    response_preview=response[:200]
+                )
+                
+                return {
+                    "success": False,
+                    "error": "Failed to parse JSON response",
+                    "raw_response": response
+                }
+                
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            logger.error(
+                "gemini_pool_summary_error",
+                actor=actor,
+                error=str(e),
+                error_type=type(e).__name__,
+                duration_ms=duration_ms
+            )
+            
+            audit_log(
+                event_type="ai_pool_summary",
+                actor=actor,
+                resource="gemini_api",
+                action="generate_pool_summary",
+                result="failure",
+                error=str(e),
+                duration_ms=duration_ms
+            )
+            
+            raise
+
+    async def generate_final_report(
+        self,
+        pool_summaries: List[Dict[str, Any]],
+        child_info: Dict[str, Any],
+        actor: str = "system"
+    ) -> Dict[str, Any]:
+        """
+        Generate comprehensive final report from all pool summaries.
+        
+        Args:
+            pool_summaries: List of all pool summaries
+                           Example: [
+                               {
+                                   "pool_id": "uuid",
+                                   "pool_title": "Communication Skills",
+                                   "summary": {...},
+                                   "total_score": 45,
+                                   "max_possible_score": 60
+                               },
+                               ...
+                           ]
+            child_info: Child information dict
+            actor: Actor making the request (for audit logging)
+            
+        Returns:
+            Dict containing the comprehensive final report
+        """
+        if not self.is_available():
+            logger.error("gemini_service_unavailable", actor=actor, operation="final_report")
+            raise ValueError("Gemini service is not configured.")
+        
+        start_time = time.time()
+        
+        prompt = f"""
+You are a pediatric development specialist AI creating a comprehensive final assessment report.
+
+CHILD INFORMATION:
+{json.dumps(child_info, indent=2)}
+
+ALL POOL SUMMARIES:
+{json.dumps(pool_summaries, indent=2)}
+
+TASK:
+Synthesize all pool summaries into one comprehensive final report that includes:
+- Overall Assessment: High-level summary of the child's overall developmental status
+- Key Findings: Most critical findings across all developmental areas
+- Developmental Profile: Comprehensive analysis across all domains
+- Strengths: Overall strengths observed across all pools
+- Areas of Concern: Any red flags or areas needing immediate attention
+- Recommendations: Specific, actionable recommendations for parents and healthcare providers
+- Next Steps: Suggested follow-up actions
+- Overall Score Interpretation: Meaning of combined scores across all pools
+
+Return your response as valid JSON with this structure:
+{{
+    "overall_assessment": "comprehensive summary paragraph",
+    "key_findings": [
+        "finding 1",
+        "finding 2",
+        ...
+    ],
+    "developmental_profile": {{
+        "summary": "overall developmental profile narrative",
+        "domains": [
+            {{
+                "domain": "pool title",
+                "status": "on track|needs support|concern",
+                "brief": "one sentence summary"
+            }}
+        ]
+    }},
+    "strengths": [
+        "strength 1",
+        ...
+    ],
+    "areas_of_concern": [
+        {{
+            "area": "specific concern",
+            "severity": "low|medium|high",
+            "recommendation": "specific action"
+        }}
+    ],
+    "recommendations": [
+        "recommendation 1",
+        ...
+    ],
+    "next_steps": [
+        "step 1",
+        ...
+    ],
+    "overall_score_interpretation": "interpretation of combined scores",
+    "confidence_level": "high|medium|low",
+    "clinical_notes": "any additional important notes"
+}}
+
+IMPORTANT:
+- Return ONLY valid JSON, no markdown formatting
+- Be thorough but concise
+- Use evidence-based developmental knowledge
+- Be sensitive and supportive in language
+- Provide actionable, specific recommendations
+- Highlight both concerns and strengths with balanced emphasis
+"""
+        
+        try:
+            logger.info(
+                "gemini_final_report_request",
+                actor=actor,
+                child_id=child_info.get("child_id"),
+                pool_count=len(pool_summaries)
+            )
+            
+            response = await self.generate_text(
+                prompt=prompt,
+                actor=actor,
+                temperature=0.4,
+                max_tokens=4096,
+                system_instruction="You are a pediatric development specialist providing evidence-based, compassionate final assessment reports. Always return valid JSON."
+            )
+            
+            # Parse JSON response
+            try:
+                cleaned_response = response.strip()
+                if cleaned_response.startswith("```json"):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.startswith("```"):
+                    cleaned_response = cleaned_response[3:]
+                if cleaned_response.endswith("```"):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+                
+                parsed_result = json.loads(cleaned_response)
+                
+                duration_ms = round((time.time() - start_time) * 1000, 2)
+                
+                logger.info(
+                    "gemini_final_report_success",
+                    actor=actor,
+                    child_id=child_info.get("child_id"),
+                    duration_ms=duration_ms
+                )
+                
+                audit_log(
+                    event_type="ai_final_report",
+                    actor=actor,
+                    resource="gemini_api",
+                    action="generate_final_report",
+                    result="success",
+                    child_id=child_info.get("child_id"),
+                    duration_ms=duration_ms
+                )
+                
+                return {
+                    "success": True,
+                    "summary": parsed_result,
+                    "raw_response": response
+                }
+                
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "gemini_final_report_json_parse_error",
+                    actor=actor,
+                    error=str(e),
+                    response_preview=response[:200]
+                )
+                
+                return {
+                    "success": False,
+                    "error": "Failed to parse JSON response",
+                    "raw_response": response
+                }
+                
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            
+            logger.error(
+                "gemini_final_report_error",
+                actor=actor,
+                error=str(e),
+                error_type=type(e).__name__,
+                duration_ms=duration_ms
+            )
+            
+            audit_log(
+                event_type="ai_final_report",
+                actor=actor,
+                resource="gemini_api",
+                action="generate_final_report",
+                result="failure",
+                error=str(e),
+                duration_ms=duration_ms
+            )
+            
+            raise
+

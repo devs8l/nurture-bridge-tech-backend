@@ -14,7 +14,12 @@ from db.models.assessment import (
     AssessmentQuestion,
     AssessmentResponse,
     AssessmentQuestionAnswer,
-    AssessmentStatus
+    AssessmentStatus,
+    AssessmentPool
+)
+from db.models.report import (
+    PoolSummary,
+    FinalReport
 )
 from db.models.audit import AuditLog
 
@@ -41,5 +46,8 @@ __all__ = [
     "AssessmentResponse",
     "AssessmentQuestionAnswer",
     "AssessmentStatus",
+    "AssessmentPool",
+    "PoolSummary",
+    "FinalReport",
     "AuditLog"
 ]

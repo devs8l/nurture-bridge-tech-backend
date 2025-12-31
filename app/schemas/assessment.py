@@ -204,6 +204,12 @@ class ConversationSubmitResponse(BaseModel):
     unmapped_questions: List[str] = Field(default_factory=list)
     mapped_answers: List[dict] = Field(default_factory=list, description="Question-answer pairs without scores")
     message: str
+    
+    # Pool and final report generation status
+    pool_summary_generated: bool = Field(default=False, description="Whether pool summary was generated")
+    pool_summary_id: Optional[str] = Field(default=None, description="Pool summary ID if generated")
+    final_report_generated: bool = Field(default=False, description="Whether final report was generated")
+    final_report_id: Optional[str] = Field(default=None, description="Final report ID if generated")
 
 
 # ============================================================================
