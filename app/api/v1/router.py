@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.schemas.common import HealthResponse
-from app.api.v1.endpoints import auth, tenants, clinical, assessment, email, intake
+from app.api.v1.endpoints import auth, tenants, clinical, assessment, email, intake, report
 
 api_router = APIRouter()
 
@@ -35,6 +35,12 @@ api_router.include_router(
     intake.router,
     prefix="/intake",
     tags=["Intake"]
+)
+
+api_router.include_router(
+    report.router,
+    prefix="/reports",
+    tags=["Reports"]
 )
 
 @api_router.get("/health", response_model=HealthResponse, tags=["system"])

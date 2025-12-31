@@ -931,11 +931,85 @@ async def submit_conversation_answers(
         
         await db.commit()
         
+        # Initialize report generation flags
+        pool_summary_generated = False
+        pool_summary_id = None
+        final_report_generated = False
+        final_report_id = None
+        
         if section_complete:
             logger.info(
                 "response_marked_complete",
                 response_id=submit_data.response_id
             )
+            
+            # STEP: Try to generate pool summary if pool is complete
+            try:
+                # Get section to find pool_id
+                section_result = await db.execute(
+                    select(AssessmentSection).where(AssessmentSection.id == section_id)
+                )
+                section = section_result.scalar_one_or_none()
+                
+                if section and section.pool_id:
+                    logger.info(
+                        "checking_pool_completion",
+                        section_id=section_id,
+                        pool_id=section.pool_id
+                    )
+                    
+                    # Import report service
+                    from app.services.report_service import ReportService
+                    ai_service = get_gemini_service()
+                    report_service = ReportService(ai_service)
+                    
+                    # Try to generate pool summary
+                    pool_summary = await report_service.check_and_generate_pool_summary(
+                        child_id=child_id,
+                        pool_id=section.pool_id,
+                        db=db
+                    )
+                    
+                    if pool_summary:
+                        pool_summary_generated = True
+                        pool_summary_id = str(pool_summary.id)
+                        logger.info(
+                            "pool_summary_auto_generated",
+                            pool_summary_id=pool_summary_id,
+                            pool_id=section.pool_id,
+                            child_id=child_id
+                        )
+                        
+                        # STEP: Try to generate final report if all pools complete
+                        try:
+                            final_report = await report_service.check_and_generate_final_report(
+                                child_id=child_id,
+                                db=db
+                            )
+                            
+                            if final_report:
+                                final_report_generated = True
+                                final_report_id = str(final_report.id)
+                                logger.info(
+                                    "final_report_auto_generated",
+                                    final_report_id=final_report_id,
+                                    child_id=child_id
+                                )
+                        except Exception as e:
+                            # Don't fail the whole request if final report generation fails
+                            logger.error(
+                                "final_report_generation_failed",
+                                child_id=child_id,
+                                error=str(e)
+                            )
+            except Exception as e:
+                # Don't fail the whole request if pool summary generation fails
+                logger.error(
+                    "pool_summary_generation_failed",
+                    section_id=section_id,
+                    child_id=child_id,
+                    error=str(e)
+                )
         
         # Build simplified mapped answers for response (question + answer only)
         mapped_answers_simplified = [
@@ -962,7 +1036,11 @@ async def submit_conversation_answers(
             completion_percentage=round(completion_percentage, 2),
             unmapped_questions=unmapped_question_ids,
             mapped_answers=mapped_answers_simplified,
-            message=f"Successfully created {answers_created} answers. Section {'complete' if section_complete else 'in progress'}."
+            message=f"Successfully created {answers_created} answers. Section {'complete' if section_complete else 'in progress'}.",
+            pool_summary_generated=pool_summary_generated,
+            pool_summary_id=pool_summary_id,
+            final_report_generated=final_report_generated,
+            final_report_id=final_report_id
         )
         
     except HTTPException:
