@@ -302,6 +302,8 @@ class Child(Base, TimestampMixin, SoftDeleteMixin):
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="children")
     responses: Mapped[List["AssessmentResponse"]] = relationship("AssessmentResponse", back_populates="child")
     intake_responses: Mapped[List["IntakeResponse"]] = relationship("IntakeResponse", back_populates="child")
+    pool_summaries: Mapped[List["PoolSummary"]] = relationship("PoolSummary", back_populates="child")
+    final_report: Mapped[Optional["FinalReport"]] = relationship("FinalReport", back_populates="child", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Child(id={self.id}, name={self.first_name} {self.last_name})>"
