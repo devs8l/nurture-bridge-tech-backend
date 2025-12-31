@@ -36,6 +36,7 @@ from app.schemas.assessment import (
     ConversationSubmitRequest,
     ConversationSubmitResponse,
     SectionProgress,
+    PoolProgress,
     AssessmentProgressResponse,
     DetailedResponseResponse,
     DetailedAnswerResponse
@@ -1002,6 +1003,7 @@ async def get_assessment_progress(
     - Overall completion percentage
     - Per-section progress with status
     - Count of sections by status (not started, in progress, completed)
+    - Pool-level aggregated statistics
     """
     logger.info(
         "assessment_progress_request",
@@ -1140,6 +1142,68 @@ async def get_assessment_progress(
             else 0.0
         )
         
+        # ========================================================================
+        # POOL-LEVEL AGGREGATION
+        # ========================================================================
+        
+        # Get all active pools
+        pools_result = await db.execute(
+            select(AssessmentPool)
+            .where(AssessmentPool.is_active == True)
+            .order_by(AssessmentPool.order_number)
+        )
+        all_pools = pools_result.scalars().all()
+        
+        # Create pool progress list
+        pool_progress_list = []
+        
+        # Create a map of pool_id to pool object for easy lookup
+        pool_map = {pool.id: pool for pool in all_pools}
+        
+        # Group sections by pool_id
+        from collections import defaultdict
+        sections_by_pool = defaultdict(list)
+        
+        for section_progress in section_progress_list:
+            if section_progress.pool_id:
+                sections_by_pool[section_progress.pool_id].append(section_progress)
+        
+        # Calculate aggregated statistics for each pool
+        for pool_id, pool_sections in sections_by_pool.items():
+            pool = pool_map.get(pool_id)
+            
+            if not pool:
+                # Skip if pool doesn't exist or is not active
+                continue
+            
+            # Aggregate statistics
+            pool_total_sections = len(pool_sections)
+            pool_not_started = sum(1 for s in pool_sections if s.status == "NOT_STARTED")
+            pool_in_progress = sum(1 for s in pool_sections if s.status == "IN_PROGRESS")
+            pool_completed = sum(1 for s in pool_sections if s.status == "COMPLETED")
+            pool_total_questions = sum(s.total_questions for s in pool_sections)
+            pool_answered_questions = sum(s.answered_questions for s in pool_sections)
+            
+            # Calculate pool completion percentage
+            pool_completion_pct = (
+                sum(s.completion_percentage for s in pool_sections) / pool_total_sections
+                if pool_total_sections > 0
+                else 0.0
+            )
+            
+            pool_progress_list.append(PoolProgress(
+                pool_id=pool_id,
+                pool_title=pool.title,
+                pool_description=pool.description,
+                total_sections=pool_total_sections,
+                sections_not_started=pool_not_started,
+                sections_in_progress=pool_in_progress,
+                sections_completed=pool_completed,
+                pool_completion_percentage=round(pool_completion_pct, 2),
+                total_questions=pool_total_questions,
+                answered_questions=pool_answered_questions
+            ))
+        
         logger.info(
             "assessment_progress_calculated",
             child_id=child_id,
@@ -1147,7 +1211,8 @@ async def get_assessment_progress(
             not_started=sections_not_started,
             in_progress=sections_in_progress,
             completed=sections_completed,
-            overall_completion=round(overall_completion, 2)
+            overall_completion=round(overall_completion, 2),
+            total_pools=len(pool_progress_list)
         )
         
         return AssessmentProgressResponse(
@@ -1157,7 +1222,8 @@ async def get_assessment_progress(
             sections_in_progress=sections_in_progress,
             sections_completed=sections_completed,
             overall_completion_percentage=round(overall_completion, 2),
-            section_progress=section_progress_list
+            section_progress=section_progress_list,
+            pool_progress=pool_progress_list
         )
         
     except HTTPException:
