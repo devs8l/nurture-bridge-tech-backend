@@ -264,15 +264,18 @@ class ReportService:
                 "final_report_completion_check",
                 child_id=child_id,
                 total_pools=total_pools,
-                completed_pools=completed_pools
+                completed_pools=completed_pools,
+                pool_ids=pool_ids,
+                summary_pool_ids=[ps.pool_id for ps in pool_summaries]
             )
 
             # Not all pools have summaries yet
             if completed_pools < total_pools:
-                logger.info(
+                logger.warning(
                     "not_all_pools_complete",
                     child_id=child_id,
-                    progress=f"{completed_pools}/{total_pools}"
+                    progress=f"{completed_pools}/{total_pools}",
+                    missing_pools=[pid for pid in pool_ids if pid not in [ps.pool_id for ps in pool_summaries]]
                 )
                 return None
 
