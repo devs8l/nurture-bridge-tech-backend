@@ -127,6 +127,38 @@ class ClinicalService:
         logger.info("doctors_found", count=len(doctors), tenant_id=tenant_id)
         return doctors
     
+    async def get_doctor_by_id(
+        self,
+        db: AsyncSession,
+        *,
+        doctor_id: str,
+        tenant_id: str
+    ) -> Doctor:
+        """Get doctor by ID (with tenant validation)."""
+        doctor = await self.doctor_repo.get(db, id=doctor_id)
+        if not doctor:
+            logger.warning("doctor_not_found", doctor_id=doctor_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Doctor not found"
+            )
+        
+        # Ensure doctor belongs to the same tenant
+        if doctor.tenant_id != tenant_id:
+            logger.warning(
+                "cross_tenant_doctor_access_attempt",
+                doctor_id=doctor_id,
+                doctor_tenant=doctor.tenant_id,
+                user_tenant=tenant_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        logger.info("doctor_retrieved", doctor_id=doctor_id)
+        return doctor
+    
     # ========================================================================
     # HOD METHODS
     # ========================================================================

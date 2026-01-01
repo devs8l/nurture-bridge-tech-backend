@@ -412,7 +412,7 @@ async def list_doctors(
 ):
     """
     List all doctors in tenant.
-    Role: TENANT_ADMIN or SUPER_ADMIN.
+    Role: TENANT_ADMIN or SUPER_ADMIN or RECEPTIONIST.
     """
     if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.RECEPTIONIST, UserRole.HOD]:
         raise HTTPException(
@@ -426,6 +426,29 @@ async def list_doctors(
         tenant_id=str(current_user.tenant_id),
         skip=skip,
         limit=limit
+    )
+
+@router.get("/doctors/{doctor_id}", response_model=DoctorResponse)
+async def get_doctor(
+    doctor_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get doctor details by ID.
+    Role: TENANT_ADMIN, RECEPTIONIST, or HOD only.
+    """
+    if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.RECEPTIONIST, UserRole.HOD]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only hospital staff can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    return await service.get_doctor_by_id(
+        db,
+        doctor_id=doctor_id,
+        tenant_id=str(current_user.tenant_id)
     )
 
 @router.get("/parents", response_model=List[ParentResponse])
