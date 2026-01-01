@@ -905,75 +905,116 @@ IMPORTANT:
         start_time = time.time()
         
         prompt = f"""
-You are a pediatric development specialist AI creating a comprehensive final assessment report.
+You are a pediatric development specialist AI creating a structured clinical assessment report.
 
-CHILD INFORMATION:
+CHILD INFORMATION (NO IDENTIFYING INFORMATION PROVIDED):
 {json.dumps(child_info, indent=2)}
 
-ALL POOL SUMMARIES:
+ALL POOL SUMMARIES WITH SCORES:
 {json.dumps(pool_summaries, indent=2)}
 
 TASK:
-Synthesize all pool summaries into one comprehensive final report that includes:
-- Overall Assessment: High-level summary of the child's overall developmental status
-- Key Findings: Most critical findings across all developmental areas
-- Developmental Profile: Comprehensive analysis across all domains
-- Strengths: Overall strengths observed across all pools
-- Areas of Concern: Any red flags or areas needing immediate attention
-- Recommendations: Specific, actionable recommendations for parents and healthcare providers
-- Next Steps: Suggested follow-up actions
-- Overall Score Interpretation: Meaning of combined scores across all pools
+Synthesize all provided information into a comprehensive developmental assessment report.
+Use clear, clinically appropriate language that is empathetic and evidence-based.
+Do NOT invent facts. Base all conclusions strictly on the provided data.
 
-Return your response as valid JSON with this structure:
+IMPORTANT: Use the placeholders {{{{child_name}}}}, {{{{father_name}}}}, and {{{{mother_name}}}} wherever names would appear.
+These will be replaced by the client application after generation - DO NOT try to fill them in yourself.
+You have NOT been provided with any names for privacy reasons.
+
+
+------------------------
+REPORT STRUCTURE
+------------------------
+
+Return ONLY valid JSON in the following exact structure:
+
 {{
-    "overall_assessment": "comprehensive summary paragraph",
-    "key_findings": [
-        "finding 1",
-        "finding 2",
-        ...
+  "reasons_for_assessment_or_referral": {{
+    "key_reasons": [
+      "5–6 word concise reason",
+      "another brief reason"
     ],
-    "developmental_profile": {{
-        "summary": "overall developmental profile narrative",
-        "domains": [
-            {{
-                "domain": "pool title",
-                "status": "on track|needs support|concern",
-                "brief": "one sentence summary"
-            }}
-        ]
-    }},
-    "strengths": [
-        "strength 1",
-        ...
+    "summary": "A short paragraph explaining why {{child_name}} was referred for assessment, based on reported concerns and observed patterns."
+  }},
+
+  "developmental_and_family_history": {{
+    "birth_history": [
+      "Gestation: ...",
+      "Delivery: ...",
+      "Perinatal Complications: ...",
+      "Birth Weight: ...",
+      "Prenatal Risks: ..."
+    ],
+    "medical_history": [
+      "Relevant medical condition or absence of issues",
+      "Hospitalizations or therapies if any"
+    ],
+    "family_history": [
+      "Family history of developmental, neurological, or psychiatric conditions",
+      "Environmental or genetic risk factors if reported"
+    ]
+  }},
+
+  "current_functioning_parent_reported": {{
+    "pools": [
+      {{
+        "pool_name": "Name of developmental pool",
+        "observations": [
+          "Clear functional observation",
+          "Another important observation",
+          "Behavioral or developmental note"
+        ],
+        "summary": "Brief narrative summary of {{child_name}}’s functioning in this domain."
+      }}
+    ]
+  }},
+
+  "summary_of_findings": {{
+    "key_strengths": [
+      "Observed developmental strength",
+      "Another consistent strength"
     ],
     "areas_of_concern": [
-        {{
-            "area": "specific concern",
-            "severity": "low|medium|high",
-            "recommendation": "specific action"
-        }}
+      "Specific developmental concern",
+      "Another area requiring support"
     ],
-    "recommendations": [
-        "recommendation 1",
-        ...
+    "observed_patterns_of_autistic_features": [
+      "Observed social-communication pattern",
+      "Behavioral or interactional pattern"
     ],
-    "next_steps": [
-        "step 1",
-        ...
-    ],
-    "overall_score_interpretation": "interpretation of combined scores",
-    "confidence_level": "high|medium|low",
-    "clinical_notes": "any additional important notes"
+    "functional_impact_on_daily_life": [
+      "Impact on home routines",
+      "Impact on social participation or learning"
+    ]
+  }},
+
+  "diagnostic_consideration": {{
+    "final_score": {{
+      "total_score": "numeric value",
+      "max_possible_score": "numeric value",
+      "autism_concerns_index": "numeric value",
+      "interpretation": "Low | Moderate | High concern"
+    }},
+    "conclusion": "Clinically reasoned conclusion summarizing developmental risk, emphasizing that this assessment is a screening tool and not a standalone diagnosis. Reference {{child_name}} and family context where appropriate."
+  }}
 }}
 
-IMPORTANT:
-- Return ONLY valid JSON, no markdown formatting
-- Be thorough but concise
-- Use evidence-based developmental knowledge
-- Be sensitive and supportive in language
-- Provide actionable, specific recommendations
-- Highlight both concerns and strengths with balanced emphasis
+------------------------
+IMPORTANT RULES
+------------------------
+
+- Return ONLY valid JSON — no markdown, no explanations.
+- Do not change the order of sections and subsections in JSON.
+- Every list item MUST follow the format: "Label: Value"
+- Labels should be short clinical descriptors (2–4 words).
+- Values should be concise, factual, and parent-reported where applicable.
+- Do NOT hard-code labels unless data supports them.
+- Maintain neutral, non-alarming clinical tone.
+- Balance strengths and concerns clearly.
+- Do NOT provide a definitive diagnosis.
 """
+
         
         try:
             logger.info(
