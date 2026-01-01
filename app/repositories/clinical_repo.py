@@ -45,7 +45,7 @@ class DoctorRepo(BaseRepository[Doctor, DoctorUpdate, DoctorUpdate]):
         """Get all parents assigned to this doctor."""
         query = (
             select(Parent)
-            .options(selectinload(Parent.user))
+            .options(selectinload(Parent.user), selectinload(Parent.children))
             .where(Parent.assigned_doctor_id == doctor_id)
             .where(Parent.is_deleted == False)
         )
