@@ -296,24 +296,26 @@ class ReportService:
                 db=db
             )
 
+            # Calculate child's age in months for clinical context (don't send DOB)
+            from datetime import date
+            today = date.today()
+            age_months = (today.year - child.date_of_birth.year) * 12 + (today.month - child.date_of_birth.month)
+            
             # Call AI service to generate final report
             ai_result = await self.ai_service.generate_final_report(
                 pool_summaries=[
                     {
-                        "pool_id": ps.pool_id,
                         "pool_title": ps.pool_title,
                         "summary": ps.summary_content,
-                        "total_score": ps.total_score,
+                        "score_earned": ps.total_score,
                         "max_possible_score": ps.max_possible_score
                     }
                     for ps in pool_summaries
                 ],
                 child_info={
-                    "child_id": str(child.id),
-                    "first_name": child.first_name,
-                    "last_name": child.last_name,
-                    "date_of_birth": str(child.date_of_birth),
-                    "gender": child.gender.value
+                    # DO NOT SEND PHI - no names, no DOB
+                    "age_months": age_months,  # Only age for clinical context
+                    "gender": child.gender.value  # Only gender for clinical context
                 },
                 actor=f"system:final_report:{child_id}"
             )
