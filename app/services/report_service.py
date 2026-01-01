@@ -640,6 +640,8 @@ class ReportService:
         db: AsyncSession
     ) -> Dict[str, Any]:
         """Gather all data for pool summary generation."""
+        from db.models.assessment import AssessmentQuestion
+        
         pool_data = {
             "pool_id": str(pool.id),
             "pool_title": pool.title,
@@ -653,13 +655,13 @@ class ReportService:
             if not response:
                 continue
 
-            # Get all answers for this response
+            # Get all answers for this response with question details
             answers_result = await db.execute(
-                select(AssessmentQuestionAnswer).where(
-                    AssessmentQuestionAnswer.response_id == response.id
-                )
+                select(AssessmentQuestionAnswer, AssessmentQuestion)
+                .join(AssessmentQuestion, AssessmentQuestionAnswer.question_id == AssessmentQuestion.id)
+                .where(AssessmentQuestionAnswer.response_id == response.id)
             )
-            answers = answers_result.scalars().all()
+            answer_question_pairs = answers_result.all()
 
             section_data = {
                 "section_id": str(section.id),
@@ -669,13 +671,12 @@ class ReportService:
                 "max_possible_score": response.max_possible_score,
                 "answers": [
                     {
-                        "question_id": str(ans.question_id),
-                        "raw_answer": ans.raw_answer,
-                        "translated_answer": ans.translated_answer,
+                        "question": question.text,  # Include question text for context
+                        "answer": ans.translated_answer or ans.raw_answer,  # Only translated answer
                         "answer_bucket": ans.answer_bucket,
                         "score": ans.score
                     }
-                    for ans in answers
+                    for ans, question in answer_question_pairs
                 ]
             }
             pool_data["sections"].append(section_data)
