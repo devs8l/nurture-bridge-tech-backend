@@ -4,31 +4,41 @@
 # ============================================================================
 
 services:
-  # ============================================================================
-  # APPLICATION - FastAPI Backend
-  # ============================================================================
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: inquantic-app
+    build: .
+    image: nurture-bridge-api
     ports:
-      - "8000:8000"
+      - "8000:8080"
     env_file:
       - .env
     environment:
-      - ENVIRONMENT=development
-    volumes:
-      - .:/app
-      - ./logs:/logs
-    networks:
-      - inquantic-network
+      - PORT=8080
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+
+
+# services:
+#   # ============================================================================
+#   # APPLICATION - FastAPI Backend
+#   # ============================================================================
+#   app:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: nurture-bridge-api
+#     ports:
+#       - "8080:8080"
+#     env_file:
+#       - .env
+#     environment:
+#       - ENVIRONMENT=development
+#     networks:
+#       - nurture-bridge-network
+#     restart: unless-stopped
+#     healthcheck:
+#       test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
 
   # ============================================================================
   # LOCAL POSTGRESQL - OPTIONAL (for local development/testing)
@@ -138,9 +148,9 @@ services:
 #   redis-data:
 #     driver: local
 
-# ============================================================================
-# NETWORKS
-# ============================================================================
-networks:
-  inquantic-network:
-    driver: bridge
+# # ============================================================================
+# # NETWORKS
+# # ============================================================================
+# networks:
+#   inquantic-network:
+#     driver: bridge

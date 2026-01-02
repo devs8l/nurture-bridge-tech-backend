@@ -91,18 +91,10 @@ tenant_mail_template = """<!DOCTYPE html>
                                   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 20px;">
                                     <tr>
                                       <!-- Username Field -->
-                                      <td style="width: 50%; padding-right: 5px;" class="mobile-stack">
+                                      <td style="width: 100%;">
                                         <div style="border: 1px solid #22283633; padding: 8px; background-color: #22283605; border-radius: 8px; text-align: center;">
                                           <span style="color: #1f2937; font-size: 14px; display: block; margin-bottom: 4px; font-family: 'Inter', Arial, sans-serif;" class="mobile-font-s">Username/Email:</span>
                                           <span style="color:#6b7280; font-size:14px; font-weight:500; text-decoration:none !important; font-family:'Inter', Arial, sans-serif; display:inline-block;">{identifier}</span>
-                                        </div>
-                                      </td>
-                                      
-                                      <!-- Password Field -->
-                                      <td style="width: 50%; padding-left: 5px;" class="mobile-stack">
-                                        <div style="border: 1px solid #22283633; padding: 8px; background-color: #22283605; border-radius: 8px; text-align: center;">
-                                          <span style="color: #1f2937; font-size: 14px; display: block; margin-bottom: 4px; font-family: 'Inter', Arial, sans-serif;" class="mobile-font-s">Password:</span>
-                                          <span style="color: #6b7280; font-size: 14px; font-weight: 500; font-family: 'Inter', Arial, sans-serif;" class="mobile-font-s">{password}</span>
                                         </div>
                                       </td>
                                     </tr>
@@ -110,7 +102,7 @@ tenant_mail_template = """<!DOCTYPE html>
                                   
                                   <!-- CTA Button -->
                                   <div style="text-align: center; margin-bottom: 20px;">
-                                    <a href="https://nbt-admin.vercel.app/{tenant_id}" style="background-color: #53AC73; color: white; padding: 16px 0; text-decoration: none; border-radius: 8px;background: #53AC73;box-shadow: 0 4px 10px 0 rgba(34, 40, 54, 0.05); font-weight: 500; display: block; width: 100%; font-size: 14px; font-family: 'Inter', Arial, sans-serif; box-sizing: border-box;" class="mobile-font-s">
+                                    <a href="{login_url}" style="background-color: #53AC73; color: white; padding: 16px 0; text-decoration: none; border-radius: 8px;background: #53AC73;box-shadow: 0 4px 10px 0 rgba(34, 40, 54, 0.05); font-weight: 500; display: block; width: 100%; font-size: 14px; font-family: 'Inter', Arial, sans-serif; box-sizing: border-box;" class="mobile-font-s">
                                       Click here to login
                                     </a>
                                   </div>
