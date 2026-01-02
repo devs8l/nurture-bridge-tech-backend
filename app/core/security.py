@@ -74,7 +74,7 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(header, payload, SECRET_KEY).decode("utf-8")
 
 def decode_token(token: str) -> Dict[str, Any]:
-    """Decode and verify JWT token."""
+    """Decode and verify JWT access token."""
     try:
         payload = jwt.decode(token, SECRET_KEY)
         
@@ -97,5 +97,42 @@ def decode_token(token: str) -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+def decode_refresh_token(token: str) -> str:
+    """Decode and verify JWT refresh token. Returns user_id."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY)
+        
+        # Validate token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type - expected refresh token",
+            )
+        
+        # Check expiration
+        exp = payload.get("exp")
+        if exp and datetime.fromtimestamp(exp) < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired",
+            )
+        
+        # Extract user_id from 'sub' claim
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token - missing user identifier",
+            )
+        
+        return user_id
+    except JoseError as e:
+        logger.error("refresh_token_decode_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )

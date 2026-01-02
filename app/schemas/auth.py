@@ -32,3 +32,8 @@ class TokenResponse(BaseSchema):
     tenant_id: Optional[str] = None  # User's tenant ID (None for SUPER_ADMIN)
     email: str  # User's email
     isChildCreated: Optional[str] = None  # For parents: child ID if they have created a child, null otherwise
+
+class RefreshTokenRequest(BaseSchema):
+    """Schema for refresh token request."""
+    refresh_token: str = Field(..., description="Valid refresh token")
+

@@ -4,9 +4,10 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app_logging.logger import get_logger
+from app_logging.id_hasher import hash_id
 from app.api.deps import get_db
 from app.services.auth_service import AuthService
-from app.schemas.auth import LoginRequest, TokenResponse, PasswordSetRequest
+from app.schemas.auth import LoginRequest, TokenResponse, PasswordSetRequest, RefreshTokenRequest
 from app.schemas.user import UserResponse
 from app.schemas.invitation import InvitationCreate, InvitationResponse
 from security.rbac import require_role
@@ -211,6 +212,60 @@ async def login_for_access_token(
         else:
             token_response["isChildCreated"] = None
     
+    return token_response
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_access_token(
+    refresh_data: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Refresh access token using a valid refresh token.
+    Returns a new access token and refresh token pair.
+    """
+    from app.core.security import decode_refresh_token
+    
+    # Decode and validate the refresh token
+    user_id = decode_refresh_token(refresh_data.refresh_token)
+    
+    # Fetch the user from the database
+    service = AuthService()
+    user = await service.user_repo.get_by_id(db, id=user_id)
+    
+    if not user:
+        logger.warning("refresh_token_user_not_found", user_id_hash=hash_id(user_id))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+    
+    # Create new token pair
+    token_response = service.create_tokens(
+        user_id=str(user.id),
+        email=user.email,
+        role=user.role.value,
+        name=user.name,
+        tenant_id=str(user.tenant_id) if user.tenant_id else None
+    )
+    
+    # For parents, check if they have created any children
+    if user.role == UserRole.PARENT:
+        from app.repositories.clinical_repo import ParentRepo
+        parent_repo = ParentRepo()
+        parent = await parent_repo.get_by_user_id(db, user_id=str(user.id))
+        
+        if parent:
+            # Check if parent has any children and get the first child's ID
+            from sqlalchemy import select
+            from db.models.clinical import Child
+            stmt = select(Child).where(Child.parent_id == parent.id).limit(1)
+            result = await db.execute(stmt)
+            child = result.scalar_one_or_none()
+            token_response["isChildCreated"] = str(child.id) if child else None
+        else:
+            token_response["isChildCreated"] = None
+    
+    logger.info("access_token_refreshed", user_id_hash=hash_id(user_id), role=user.role.value)
     return token_response
 
 @router.post("/invitations/{token}/accept", response_model=UserResponse)
