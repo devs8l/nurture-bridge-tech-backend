@@ -11,6 +11,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app_logging.logger import get_logger
+from app.api.deps import get_current_user  # RBAC enforcement
+from db.models.auth import User, UserRole  # RBAC enforcement
 from db.base import get_db
 from db.models.assessment import (
     AssessmentPool,
@@ -60,9 +62,16 @@ def calculate_age(dob):
 @router.post("/pools", response_model=PoolResponse, status_code=status.HTTP_201_CREATED)
 async def create_pool(
     pool_data: PoolCreate,
+    current_user: User = Depends(get_current_user),  # RBAC: Added authentication
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new assessment pool."""
+    """Create a new assessment pool. RBAC: Only SUPER_ADMIN allowed."""
+    # RBAC: Only super admins can create pools
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can create assessment pools"
+        )
     pool = AssessmentPool(**pool_data.model_dump())
     db.add(pool)
     await db.commit()
@@ -112,9 +121,16 @@ async def get_pool(
 async def update_pool(
     pool_id: str,
     pool_data: PoolCreate,
+    current_user: User = Depends(get_current_user),  # RBAC: Added authentication
     db: AsyncSession = Depends(get_db)
 ):
-    """Update an assessment pool."""
+    """Update an assessment pool. RBAC: Only SUPER_ADMIN allowed."""
+    # RBAC: Only super admins can update pools
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can update assessment pools"
+        )
     result = await db.execute(
         select(AssessmentPool).where(AssessmentPool.id == pool_id)
     )
@@ -162,9 +178,16 @@ async def delete_pool(
 @router.post("/sections", response_model=SectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_section(
     section_data: SectionCreate,
+    current_user: User = Depends(get_current_user),  # RBAC: Added authentication
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new assessment section."""
+    """Create a new assessment section. RBAC: Only SUPER_ADMIN allowed."""
+    # RBAC: Only super admins can create sections
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can create assessment sections"
+        )
     section = AssessmentSection(**section_data.model_dump())
     db.add(section)
     await db.commit()
@@ -206,6 +229,7 @@ async def get_section(
     section = result.scalar_one_or_none()
     
     if not section:
+        # TODO: PHI-LEAK-FIX (M-003) - Use generic error messages to prevent ID exposure
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Section with id {section_id} not found"
@@ -268,9 +292,16 @@ async def delete_section(
 @router.post("/questions", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)
 async def create_question(
     question_data: QuestionCreate,
+    current_user: User = Depends(get_current_user),  # RBAC: Added authentication
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new assessment question."""
+    """Create a new assessment question. RBAC: Only SUPER_ADMIN allowed."""
+    # RBAC: Only super admins can create questions
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can create assessment questions"
+        )
     question = AssessmentQuestion(**question_data.model_dump())
     db.add(question)
     await db.commit()
@@ -754,18 +785,23 @@ async def submit_conversation_answers(
             unanswered_question_count=len(unanswered_questions)
         )
         
-        # STEP 1: Store raw conversation in conversation_logs table
+        # STEP 1: Store ENCRYPTED conversation in conversation_logs table (PHI protection)
         from db.models.assessment import ConversationLog
+        from app_logging.conversation_encryption import get_encryptor
+        
+        # Encrypt conversation before storage to protect PHI
+        encryptor = get_encryptor()
+        encrypted_conversation = encryptor.encrypt(submit_data.conversation)
         
         conversation_log = ConversationLog(
             response_id=submit_data.response_id,
-            conversation=submit_data.conversation
+            conversation=encrypted_conversation  # Store encrypted
         )
         db.add(conversation_log)
         await db.flush()  # Flush to get the ID
         
         logger.info(
-            "conversation_log_created",
+            "conversation_log_created_encrypted",
             response_id=submit_data.response_id,
             conversation_log_id=conversation_log.id
         )
@@ -798,6 +834,8 @@ async def submit_conversation_answers(
             )
         
         # Use AI to map questions to answers (passing age for context)
+        # NOTE: We use the original unencrypted conversation from the request
+        # The encrypted version is only stored in the database
         logger.info(
             "calling_ai_map_questions",
             response_id=submit_data.response_id,
@@ -805,7 +843,7 @@ async def submit_conversation_answers(
         )
         
         ai_result = await ai_service.map_questions_to_answers(
-            conversation=submit_data.conversation,
+            conversation=submit_data.conversation,  # Use original unencrypted conversation
             questions=unanswered_questions,
             child_age_months=child_age_months,
             actor=f"system:assessment_submit"

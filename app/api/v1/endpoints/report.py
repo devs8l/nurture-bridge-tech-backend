@@ -6,6 +6,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user  # Added for RBAC
+from db.models.auth import User  # Added for type hints
+
 from app.schemas.report import (
     PoolSummaryResponse,
     FinalReportResponse,
@@ -97,7 +100,7 @@ async def regenerate_pool_summary(
 @router.get("/final/{child_id}", response_model=FinalReportResponse)
 async def get_final_report(
     child_id: str,
-    current_user_role: str = "DOCTOR",  # TODO: Get from auth context
+    current_user: "User" = Depends(get_current_user),  # FIXED: was hardcoded "DOCTOR"
     db: AsyncSession = Depends(get_db),
     report_service: ReportService = Depends(get_report_service)
 ):
@@ -108,11 +111,17 @@ async def get_final_report(
     - Doctors can see any generated report
     - HODs can only see doctor-reviewed reports
     """
-    logger.info("get_final_report_request", child_id=child_id, role=current_user_role)
+    from app_logging.id_hasher import hash_id
+    
+    logger.info(
+        "get_final_report_request",
+        child_id_hash=hash_id(child_id),
+        role=current_user.role.value
+    )
     
     report = await report_service.get_final_report(
         child_id=child_id,
-        current_user_role=current_user_role,
+        current_user_role=current_user.role.value,  # Use actual role from authenticated user
         db=db
     )
     

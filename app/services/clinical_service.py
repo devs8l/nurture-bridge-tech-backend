@@ -3,6 +3,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app_logging.logger import get_logger
+from app_logging.id_hasher import hash_id  # PHI protection
 from app.repositories.clinical_repo import DoctorRepo, ParentRepo, ChildRepo, HODRepo, ReceptionistRepo
 from app.schemas.clinical import (
     DoctorUpdate, DoctorResponse,
@@ -49,10 +50,10 @@ class ClinicalService:
         """
         logger.info(
             "creating_doctor_profile",
-            user_id=user_id,
-            tenant_id=tenant_id,
-            department=department,
-            has_license=bool(license_number)
+            user_id_hash=hash_id(user_id),
+            tenant_id_hash=hash_id(tenant_id),
+            department=department
+            # license_number removed from logs - PHI
         )
         doctor = Doctor(
             user_id=user_id,
@@ -65,7 +66,7 @@ class ClinicalService:
         db.add(doctor)
         await db.commit()
         await db.refresh(doctor)
-        logger.info("doctor_profile_created", doctor_id=str(doctor.id), user_id=user_id)
+        logger.info("doctor_profile_created", doctor_id_hash=hash_id(str(doctor.id)), user_id_hash=hash_id(user_id))
         return doctor
     
     async def get_doctor_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Doctor]:
@@ -82,12 +83,12 @@ class ClinicalService:
         """Update doctor profile."""
         doctor = await self.doctor_repo.get(db, id=doctor_id)
         if not doctor:
-            logger.warning("doctor_not_found", doctor_id=doctor_id)
+            logger.warning("doctor_not_found", doctor_id_hash=hash_id(doctor_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Doctor not found"
             )
-        logger.info("updating_doctor_profile", doctor_id=doctor_id)
+        logger.info("updating_doctor_profile", doctor_id_hash=hash_id(doctor_id))
         return await self.doctor_repo.update(db, db_obj=doctor, obj_in=update_data)
     
     async def get_doctor_assigned_parents(
@@ -117,14 +118,14 @@ class ClinicalService:
         limit: int = 100
     ) -> List[Doctor]:
         """List all doctors in tenant (admin only)."""
-        logger.info("listing_doctors_in_tenant", tenant_id=tenant_id, skip=skip, limit=limit)
+        logger.info("listing_doctors_in_tenant", tenant_id_hash=hash_id(tenant_id), skip=skip, limit=limit)
         doctors = await self.doctor_repo.get_by_tenant(
             db, 
             tenant_id=tenant_id, 
             skip=skip, 
             limit=limit
         )
-        logger.info("doctors_found", count=len(doctors), tenant_id=tenant_id)
+        logger.info("doctors_found", count=len(doctors), tenant_id_hash=hash_id(tenant_id))
         return doctors
     
     async def get_doctor_by_id(
@@ -137,7 +138,7 @@ class ClinicalService:
         """Get doctor by ID (with tenant validation)."""
         doctor = await self.doctor_repo.get(db, id=doctor_id)
         if not doctor:
-            logger.warning("doctor_not_found", doctor_id=doctor_id)
+            logger.warning("doctor_not_found", doctor_id_hash=hash_id(doctor_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Doctor not found"
@@ -147,16 +148,16 @@ class ClinicalService:
         if doctor.tenant_id != tenant_id:
             logger.warning(
                 "cross_tenant_doctor_access_attempt",
-                doctor_id=doctor_id,
-                doctor_tenant=doctor.tenant_id,
-                user_tenant=tenant_id
+                doctor_id_hash=hash_id(doctor_id),
+                doctor_tenant_hash=hash_id(doctor.tenant_id),
+                user_tenant_hash=hash_id(tenant_id)
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied"
             )
         
-        logger.info("doctor_retrieved", doctor_id=doctor_id)
+        logger.info("doctor_retrieved", doctor_id_hash=hash_id(doctor_id))
         return doctor
     
     # ========================================================================
@@ -179,8 +180,8 @@ class ClinicalService:
         """
         logger.info(
             "creating_hod_profile",
-            user_id=user_id,
-            tenant_id=tenant_id,
+            user_id_hash=hash_id(user_id),
+            tenant_id_hash=hash_id(tenant_id),
             department=department
         )
         hod = HOD(
@@ -193,7 +194,7 @@ class ClinicalService:
         db.add(hod)
         await db.commit()
         await db.refresh(hod)
-        logger.info("hod_profile_created", hod_id=str(hod.id), user_id=user_id)
+        logger.info("hod_profile_created", hod_id_hash=hash_id(str(hod.id)), user_id_hash=hash_id(user_id))
         return hod
     
     async def get_hod_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[HOD]:
@@ -210,12 +211,12 @@ class ClinicalService:
         """Update HOD profile."""
         hod = await self.hod_repo.get(db, id=hod_id)
         if not hod:
-            logger.warning("hod_not_found", hod_id=hod_id)
+            logger.warning("hod_not_found", hod_id_hash=hash_id(hod_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="HOD not found"
             )
-        logger.info("updating_hod_profile", hod_id=hod_id)
+        logger.info("updating_hod_profile", hod_id_hash=hash_id(hod_id))
         return await self.hod_repo.update(db, db_obj=hod, obj_in=update_data)
     
     # ========================================================================
@@ -238,8 +239,8 @@ class ClinicalService:
         """
         logger.info(
             "creating_receptionist_profile",
-            user_id=user_id,
-            tenant_id=tenant_id,
+            user_id_hash=hash_id(user_id),
+            tenant_id_hash=hash_id(tenant_id),
             department=department
         )
         receptionist = Receptionist(
@@ -252,7 +253,7 @@ class ClinicalService:
         db.add(receptionist)
         await db.commit()
         await db.refresh(receptionist)
-        logger.info("receptionist_profile_created", receptionist_id=str(receptionist.id), user_id=user_id)
+        logger.info("receptionist_profile_created", receptionist_id_hash=hash_id(str(receptionist.id)), user_id_hash=hash_id(user_id))
         return receptionist
     
     async def get_receptionist_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Receptionist]:
@@ -269,12 +270,12 @@ class ClinicalService:
         """Update receptionist profile."""
         receptionist = await self.receptionist_repo.get(db, id=receptionist_id)
         if not receptionist:
-            logger.warning("receptionist_not_found", receptionist_id=receptionist_id)
+            logger.warning("receptionist_not_found", receptionist_id_hash=hash_id(receptionist_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Receptionist not found"
             )
-        logger.info("updating_receptionist_profile", receptionist_id=receptionist_id)
+        logger.info("updating_receptionist_profile", receptionist_id_hash=hash_id(receptionist_id))
         return await self.receptionist_repo.update(db, db_obj=receptionist, obj_in=update_data)
     
     # ========================================================================
@@ -298,9 +299,9 @@ class ClinicalService:
         """
         logger.info(
             "creating_parent_profile",
-            user_id=user_id,
-            tenant_id=tenant_id,
-            assigned_doctor_id=assigned_doctor_id
+            user_id_hash=hash_id(user_id),
+            tenant_id_hash=hash_id(tenant_id),
+            has_assigned_doctor=bool(assigned_doctor_id)
         )
         parent = Parent(
             user_id=user_id,
@@ -313,7 +314,7 @@ class ClinicalService:
         db.add(parent)
         await db.commit()
         await db.refresh(parent)
-        logger.info("parent_profile_created", parent_id=str(parent.id), user_id=user_id)
+        logger.info("parent_profile_created", parent_id_hash=hash_id(str(parent.id)), user_id_hash=hash_id(user_id))
         return parent
     
     async def get_parent_by_user_id(self, db: AsyncSession, *, user_id: str) -> Optional[Parent]:
@@ -376,7 +377,7 @@ class ClinicalService:
         # Validate parent exists and is in the same tenant
         parent = await self.parent_repo.get(db, id=parent_id)
         if not parent:
-            logger.warning("parent_not_found_for_assignment", parent_id=parent_id)
+            logger.warning("parent_not_found_for_assignment", parent_id_hash=hash_id(parent_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Parent not found"
@@ -385,9 +386,9 @@ class ClinicalService:
         if parent.tenant_id != current_user_tenant_id:
             logger.warning(
                 "cross_tenant_parent_assignment_attempt",
-                parent_id=parent_id,
-                parent_tenant=parent.tenant_id,
-                user_tenant=current_user_tenant_id
+                parent_id_hash=hash_id(parent_id),
+                parent_tenant_hash=hash_id(parent.tenant_id),
+                user_tenant_hash=hash_id(current_user_tenant_id)
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -397,7 +398,7 @@ class ClinicalService:
         # Validate doctor exists and is in the same tenant
         doctor = await self.doctor_repo.get(db, id=doctor_id)
         if not doctor:
-            logger.warning("doctor_not_found_for_assignment", doctor_id=doctor_id)
+            logger.warning("doctor_not_found_for_assignment", doctor_id_hash=hash_id(doctor_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Doctor not found"
@@ -406,9 +407,9 @@ class ClinicalService:
         if doctor.tenant_id != current_user_tenant_id:
             logger.warning(
                 "cross_tenant_doctor_assignment_attempt",
-                doctor_id=doctor_id,
-                doctor_tenant=doctor.tenant_id,
-                user_tenant=current_user_tenant_id
+                doctor_id_hash=hash_id(doctor_id),
+                doctor_tenant_hash=hash_id(doctor.tenant_id),
+                user_tenant_hash=hash_id(current_user_tenant_id)
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -418,9 +419,9 @@ class ClinicalService:
         # Assign the doctor
         logger.info(
             "assigning_doctor_to_parent",
-            parent_id=parent_id,
-            doctor_id=doctor_id,
-            tenant_id=current_user_tenant_id
+            parent_id_hash=hash_id(parent_id),
+            doctor_id_hash=hash_id(doctor_id),
+            tenant_id_hash=hash_id(current_user_tenant_id)
         )
         updated_parent = await self.parent_repo.assign_doctor(
             db,
@@ -429,8 +430,8 @@ class ClinicalService:
         )
         logger.info(
             "doctor_assigned_to_parent",
-            parent_id=parent_id,
-            doctor_id=doctor_id
+            parent_id_hash=hash_id(parent_id),
+            doctor_id_hash=hash_id(doctor_id)
         )
         return updated_parent
 
@@ -451,14 +452,14 @@ class ClinicalService:
         Create a child for a parent.
         This is the ONLY clinical entity parents can create via API.
         """
-        logger.info("creating_child", parent_id=parent_id, tenant_id=tenant_id)
+        logger.info("creating_child", parent_id_hash=hash_id(parent_id), tenant_id_hash=hash_id(tenant_id))
         child = await self.child_repo.create(
             db, 
             obj_in=child_data, 
             parent_id=parent_id,
             tenant_id=tenant_id
         )
-        logger.info("child_created", child_id=str(child.id), parent_id=parent_id)
+        logger.info("child_created", child_id_hash=hash_id(str(child.id)), parent_id_hash=hash_id(parent_id))
         return child
     
     async def update_child(
@@ -472,7 +473,7 @@ class ClinicalService:
         """Update child information."""
         child = await self.child_repo.get(db, id=child_id)
         if not child:
-            logger.warning("child_not_found", child_id=child_id)
+            logger.warning("child_not_found", child_id_hash=hash_id(child_id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Child not found"
@@ -482,16 +483,16 @@ class ClinicalService:
         if child.parent_id != parent_id:
             logger.warning(
                 "unauthorized_child_update",
-                child_id=child_id,
-                parent_id=parent_id,
-                actual_parent_id=child.parent_id
+                child_id_hash=hash_id(child_id),
+                parent_id_hash=hash_id(parent_id),
+                actual_parent_id_hash=hash_id(child.parent_id)
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update this child"
             )
         
-        logger.info("updating_child", child_id=child_id, parent_id=parent_id)
+        logger.info("updating_child", child_id_hash=hash_id(child_id), parent_id_hash=hash_id(parent_id))
         return await self.child_repo.update(db, db_obj=child, obj_in=update_data)
     
     async def get_child(self, db: AsyncSession, *, child_id: str) -> Optional[Child]:
