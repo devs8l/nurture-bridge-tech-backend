@@ -8,6 +8,7 @@ from email.utils import formataddr
 from smtplib import SMTP_SSL, SMTPException
 
 from app_logging.logger import get_logger
+from app_logging.id_hasher import hash_email  # PHI protection
 from config.settings import settings
 
 logger = get_logger(__name__)
@@ -41,12 +42,12 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
             smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
             smtp.send_message(msg)
 
-        logger.info(f"Email sent successfully to {to_email}")
+        logger.info("email_sent_successfully", recipient_hash=hash_email(to_email))
         return True
 
     except SMTPException as smtp_err:
-        logger.error(f"SMTP Error sending email to {to_email}: {smtp_err}")
+        logger.error("smtp_error_sending_email", recipient_hash=hash_email(to_email), error=str(smtp_err))
         return False
     except Exception as e:
-        logger.error(f"An unexpected error occurred while sending email to {to_email}: {e}")
+        logger.error("unexpected_error_sending_email", recipient_hash=hash_email(to_email), error=str(e))
         return False

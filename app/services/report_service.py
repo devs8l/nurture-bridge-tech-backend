@@ -644,7 +644,13 @@ class ReportService:
         responses: List[AssessmentResponse],
         db: AsyncSession
     ) -> Dict[str, Any]:
-        """Gather all data for pool summary generation."""
+        """
+        Gather all data for pool summary generation.
+        
+        TODO: PHI-LEAK-FIX (H-001) - Redact child names and identifying information
+        from assessment answers before sending to AI. Currently sends raw answers
+        which may contain child names mentioned during conversations.
+        """
         from db.models.assessment import AssessmentQuestion
         
         pool_data = {
