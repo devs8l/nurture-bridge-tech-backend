@@ -139,6 +139,7 @@ class Settings:
     # ========================================================================
     # FEATURE FLAGS
     # ========================================================================
+    ENABLE_API_DOCS: bool = config("ENABLE_API_DOCS", default=True, cast=bool)
     FEATURE_NEW_UI: bool = config("FEATURE_NEW_UI", default=False, cast=bool)
     FEATURE_BETA_API: bool = config("FEATURE_BETA_API", default=False, cast=bool)
 
@@ -168,10 +169,14 @@ class Settings:
             if len(self.SECRET_KEY) < 32:
                 raise ValueError("SECRET_KEY must be at least 32 characters in production!")
 
-            # Ensure HTTPS-only CORS origins
+            # Ensure HTTPS-only CORS origins (allow localhost for development)
             for origin in self.CORS_ORIGINS:
-                if not origin.startswith("https://") and origin != "localhost":
-                    raise ValueError(f"Production CORS origin must use HTTPS: {origin}")
+                # Allow localhost with any port (e.g., http://localhost:8000)
+                is_localhost = origin.startswith("http://localhost") or origin == "localhost"
+                is_https = origin.startswith("https://")
+                
+                if not is_https and not is_localhost:
+                    raise ValueError(f"Production CORS origin must use HTTPS or localhost: {origin}")
 
             # Ensure database uses TLS
             if not self.DATABASE_URL.startswith("postgresql+asyncpg://") or "sslmode" not in self.DATABASE_URL:

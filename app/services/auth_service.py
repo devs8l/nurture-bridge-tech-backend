@@ -7,6 +7,7 @@ from authlib.jose import jwt, JoseError
 
 from app_logging.logger import get_logger
 from app_logging.audit import audit_authentication, audit_authorization, audit_data_modification
+from app_logging.id_hasher import hash_id, hash_email  # PHI protection
 from app.core.security import verify_password, create_access_token, create_refresh_token
 from app.repositories.user_repo import UserRepo
 from app.repositories.invitation_repo import InvitationRepo
@@ -31,7 +32,7 @@ class AuthService:
         """
         user = await self.user_repo.get_by_email(db, email=email)
         if not user:
-            logger.warning("authentication_failed", reason="user_not_found", email=email)
+            logger.warning("authentication_failed", reason="user_not_found", email_hash=hash_email(email))
             audit_authentication(
                 actor=f"user:{email}",
                 success=False,
@@ -41,7 +42,7 @@ class AuthService:
             return None
         
         if not verify_password(password, user.password_hash):
-            logger.warning("authentication_failed", reason="invalid_password", email=email)
+            logger.warning("authentication_failed", reason="invalid_password", email_hash=hash_email(email))
             audit_authentication(
                 actor=f"user:{user.id}",
                 success=False,
@@ -50,7 +51,7 @@ class AuthService:
             )
             return None
         
-        logger.info("user_authenticated", user_id=str(user.id), email=email, role=user.role.value)
+        logger.info("user_authenticated", user_id_hash=hash_id(str(user.id)), email_hash=hash_email(email), role=user.role.value)
         audit_authentication(
             actor=f"user:{user.id}",
             success=True,
@@ -91,9 +92,9 @@ class AuthService:
         """
         logger.info(
             "creating_invitation",
-            creator_user_id=creator_user_id,
+            creator_user_id_hash=hash_id(creator_user_id),
             role=invitation_data.role.value,
-            tenant_id=str(invitation_data.tenant_id)
+            tenant_id_hash=hash_id(str(invitation_data.tenant_id))
         )
         invitation_repo = InvitationRepo()
         invitation = await invitation_repo.create(
@@ -101,7 +102,7 @@ class AuthService:
             obj_in=invitation_data, 
             invited_by_user_id=creator_user_id
         )
-        logger.info("invitation_created", invitation_id=str(invitation.id), email=invitation.email)
+        logger.info("invitation_created", invitation_id_hash=hash_id(str(invitation.id)), email_hash=hash_email(invitation.email))
         return invitation
 
     async def accept_invitation(self, db: AsyncSession, token: str, name: str, password: str) -> User:
@@ -156,9 +157,9 @@ class AuthService:
         # Create User
         logger.info(
             "creating_user_from_invitation",
-            email=invite.email,
+            email_hash=hash_email(invite.email),
             role=invite.role_to_assign.value,
-            tenant_id=invite.tenant_id
+            tenant_id_hash=hash_id(invite.tenant_id)
         )
         user = await self.user_repo.create_from_invitation(
             db,
@@ -248,8 +249,8 @@ class AuthService:
         await invitation_repo.mark_as_accepted(db, invitation=invite)
         logger.info(
             "invitation_accepted",
-            user_id=str(user.id),
-            email=user.email,
+            user_id_hash=hash_id(str(user.id)),
+            email_hash=hash_email(user.email),
             role=user.role.value
         )
         

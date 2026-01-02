@@ -104,9 +104,9 @@ app = FastAPI(
     title=settings.APP_NAME,
     version="0.0.2",
     description="InQuantic.ai - Nurture Bridge Microservice",
-    docs_url="/api/docs" if settings.ENVIRONMENT != "production" else None,
-    redoc_url="/api/redoc" if settings.ENVIRONMENT != "production" else None,
-    openapi_url="/api/openapi.json" if settings.ENVIRONMENT != "production" else None,
+    docs_url="/api/docs" if settings.ENABLE_API_DOCS else None,
+    redoc_url="/api/redoc" if settings.ENABLE_API_DOCS else None,
+    openapi_url="/api/openapi.json" if settings.ENABLE_API_DOCS else None,
     lifespan=lifespan,  # Use modern lifespan context manager
 )
 
@@ -254,7 +254,7 @@ async def root():
         "version": "1.0.0",
         "status": "operational",
         "environment": settings.ENVIRONMENT,
-        "docs": "/api/docs" if settings.ENVIRONMENT != "production" else "disabled"
+        "docs": "/api/docs" if settings.ENABLE_API_DOCS else "disabled"
     }
 
 # ============================================================================

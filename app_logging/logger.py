@@ -56,9 +56,28 @@ def mask_pii(logger, method_name, event_dict):
         return event_dict
 
     sensitive_fields = [
+        # Authentication & Secrets
         "password", "token", "secret", "api_key",
+        "access_token", "refresh_token", "jwt",
+        
+        # Financial
         "ssn", "social_security", "credit_card", "card_number",
-        "email", "phone", "phone_number", "address"
+        
+        # Contact Info
+        # NOTE: email is handled separately via hash_email() in logs
+        "phone", "phone_number", "address",
+        
+        # Personal Identifiers (Healthcare-specific PHI)
+        "first_name", "last_name", "full_name", "name",
+        "child_name", "parent_name", "mother_name", "father_name",
+        
+        # Medical Info
+        "date_of_birth", "dob", "birth_date", "birthdate",
+        "medical_record_number", "mrn",
+        "license_number",  # Doctor license number
+        
+        # Assessment Data (Clinical PHI)
+        "conversation", "transcript", "raw_answer", "translated_answer"
     ]
 
     def mask_value(value):
