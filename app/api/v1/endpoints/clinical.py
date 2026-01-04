@@ -10,7 +10,8 @@ from app.schemas.clinical import (
     HODUpdate, HODResponse,
     ReceptionistUpdate, ReceptionistResponse,
     ParentUpdate, ParentResponse, AssignDoctorToParent,
-    ChildCreate, ChildUpdate, ChildResponse
+    ChildCreate, ChildUpdate, ChildResponse,
+    StaffMemberResponse
 )
 from db.models.auth import User, UserRole
 
@@ -470,6 +471,34 @@ async def list_parents(
     
     service = ClinicalService()
     return await service.list_parents_in_tenant(
+        db,
+        tenant_id=str(current_user.tenant_id),
+        skip=skip,
+        limit=limit
+    )
+
+@router.get("/staff", response_model=List[StaffMemberResponse])
+async def list_all_staff(
+    skip: int = 0,
+    limit: int = 1000,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all staff members in tenant (doctors, HODs, receptionists).
+    Role: TENANT_ADMIN only.
+    
+    Returns a unified list of all staff members with their role information.
+    Excludes TENANT_ADMIN users themselves.
+    """
+    if current_user.role != UserRole.TENANT_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant admins can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    return await service.get_all_staff_in_tenant(
         db,
         tenant_id=str(current_user.tenant_id),
         skip=skip,

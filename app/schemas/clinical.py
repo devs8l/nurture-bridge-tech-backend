@@ -183,3 +183,26 @@ class ChildResponse(BaseSchema):
     
     class Config:
         from_attributes = True
+
+# ============================================================================
+# STAFF SCHEMAS (Combined)
+# ============================================================================
+
+class StaffMemberResponse(BaseSchema):
+    """
+    Unified schema for staff member response.
+    Represents doctors, HODs, or receptionists with their role type.
+    """
+    id: UUID
+    user_id: UUID
+    tenant_id: UUID
+    first_name: str
+    last_name: str
+    department: str
+    role: str  # "DOCTOR", "HOD", or "RECEPTIONIST"
+    license_number: Optional[str] = None  # Only for doctors
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True

@@ -136,7 +136,11 @@ class ClinicalService:
         tenant_id: str
     ) -> Doctor:
         """Get doctor by ID (with tenant validation)."""
-        doctor = await self.doctor_repo.get(db, id=doctor_id)
+        logger.info("getting_doctor_by_id", doctor_id_hash=hash_id(doctor_id), tenant_id_hash=hash_id(tenant_id))
+        
+        # Fetch doctor by ID
+        doctor = await self.doctor_repo.get_by_id(db, id=doctor_id)
+        
         if not doctor:
             logger.warning("doctor_not_found", doctor_id_hash=hash_id(doctor_id))
             raise HTTPException(
@@ -144,21 +148,95 @@ class ClinicalService:
                 detail="Doctor not found"
             )
         
-        # Ensure doctor belongs to the same tenant
-        if doctor.tenant_id != tenant_id:
+        # Ensure tenant isolation
+        if str(doctor.tenant_id) != tenant_id:
             logger.warning(
-                "cross_tenant_doctor_access_attempt",
-                doctor_id_hash=hash_id(doctor_id),
-                doctor_tenant_hash=hash_id(doctor.tenant_id),
-                user_tenant_hash=hash_id(tenant_id)
+                "tenant_mismatch",
+                doctor_tenant_id_hash=hash_id(str(doctor.tenant_id)),
+                requested_tenant_id_hash=hash_id(tenant_id)
             )
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Doctor not found in this tenant"
             )
         
-        logger.info("doctor_retrieved", doctor_id_hash=hash_id(doctor_id))
         return doctor
+
+    async def get_all_staff_in_tenant(
+        self,
+        db: AsyncSession,
+        *,
+        tenant_id: str,
+        skip: int = 0,
+        limit: int = 1000
+    ) -> List[dict]:
+        """
+        Get all staff members (doctors, HODs, receptionists) in a tenant.
+        Returns a unified list with role information.
+        """
+        logger.info("getting_all_staff_in_tenant", tenant_id_hash=hash_id(tenant_id), skip=skip, limit=limit)
+        
+        # Fetch all staff types
+        doctors = await self.doctor_repo.get_by_tenant(db, tenant_id=tenant_id, skip=0, limit=limit)
+        hods = await self.hod_repo.get_by_tenant(db, tenant_id=tenant_id, skip=0, limit=limit)
+        receptionists = await self.receptionist_repo.get_by_tenant(db, tenant_id=tenant_id, skip=0, limit=limit)
+        
+        # Build unified staff list
+        staff_list = []
+        
+        # Add doctors
+        for doctor in doctors:
+            staff_list.append({
+                "id": doctor.id,
+                "user_id": doctor.user_id,
+                "tenant_id": doctor.tenant_id,
+                "first_name": doctor.first_name,
+                "last_name": doctor.last_name,
+                "department": doctor.department,
+                "role": "DOCTOR",
+                "license_number": doctor.license_number,
+                "created_at": doctor.created_at,
+                "updated_at": doctor.updated_at
+            })
+        
+        # Add HODs
+        for hod in hods:
+            staff_list.append({
+                "id": hod.id,
+                "user_id": hod.user_id,
+                "tenant_id": hod.tenant_id,
+                "first_name": hod.first_name,
+                "last_name": hod.last_name,
+                "department": hod.department,
+                "role": "HOD",
+                "license_number": None,
+                "created_at": hod.created_at,
+                "updated_at": hod.updated_at
+            })
+        
+        # Add receptionists
+        for receptionist in receptionists:
+            staff_list.append({
+                "id": receptionist.id,
+                "user_id": receptionist.user_id,
+                "tenant_id": receptionist.tenant_id,
+                "first_name": receptionist.first_name,
+                "last_name": receptionist.last_name,
+                "department": receptionist.department,
+                "role": "RECEPTIONIST",
+                "license_number": None,
+                "created_at": receptionist.created_at,
+                "updated_at": receptionist.updated_at
+            })
+        
+        logger.info("staff_found", 
+                   total_count=len(staff_list),
+                   doctors_count=len(doctors),
+                   hods_count=len(hods),
+                   receptionists_count=len(receptionists),
+                   tenant_id_hash=hash_id(tenant_id))
+        
+        return staff_list
     
     # ========================================================================
     # HOD METHODS
