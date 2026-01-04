@@ -230,7 +230,7 @@ async def refresh_access_token(
     
     # Fetch the user from the database
     service = AuthService()
-    user = await service.user_repo.get_by_id(db, id=user_id)
+    user = await service.user_repo.get(db, id=user_id)
     
     if not user:
         logger.warning("refresh_token_user_not_found", user_id_hash=hash_id(user_id))
