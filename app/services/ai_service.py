@@ -1004,6 +1004,22 @@ Return ONLY valid JSON in the following exact structure:
 IMPORTANT RULES
 ------------------------
 
+#Scoring Rules:
+- Domain weights:
+    - Onboarding: 0%  
+    - Social Reciprocity: 25%
+    - Language and Communication: 28%
+    - Adaptive Behavior and Self help: 28%
+    - Cognition and Play: 19%
+- Calculation of Autism Likelyhood Index:
+    - Domain % Score = (Total Score / Max Possible Score) * 100
+    - Final Autism Concerns Index (ACI) = sum of all (domain scores * domain weights)
+    - Interpretation:
+        - Low concern: 0 - 30
+        - Moderate concern: 31 <= ACI < 60
+        - High concern: ACI >= 61
+
+#Reporting Rules:
 - Return ONLY valid JSON — no markdown, no explanations.
 - Do not change the order of sections and subsections in JSON.
 - Every list item MUST follow the format: "Label: Value"
