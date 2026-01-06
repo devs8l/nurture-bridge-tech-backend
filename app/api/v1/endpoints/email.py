@@ -23,7 +23,7 @@ async def send_credentials_endpoint(
     
     # Determine login URL based on role
     if role.upper() == "PARENT":
-        login_url = f"https://nb-v1.vercel.app/onboarding?token={token}"
+        login_url = f"https://demo.nurturebridgetech.com/onboarding?token={token}"
     else:
         login_url = f"https://nbt-admin.vercel.app/onboarding?token={token}"
     

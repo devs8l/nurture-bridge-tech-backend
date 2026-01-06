@@ -1339,10 +1339,10 @@ async def get_assessment_progress(
                 # Add to total completion
                 total_completion += completion_pct
         
-        # Calculate overall completion percentage
+        # Calculate overall completion percentage (based on APPLICABLE sections only)
         overall_completion = (
-            total_completion / len(all_sections)
-            if len(all_sections) > 0
+            total_completion / len(section_progress_list)
+            if len(section_progress_list) > 0
             else 0.0
         )
         
@@ -1421,7 +1421,7 @@ async def get_assessment_progress(
         
         return AssessmentProgressResponse(
             child_id=child_id,
-            total_sections=len(all_sections),
+            total_sections=len(section_progress_list),  # Only applicable sections
             sections_not_started=sections_not_started,
             sections_in_progress=sections_in_progress,
             sections_completed=sections_completed,
