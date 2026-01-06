@@ -1,6 +1,8 @@
 from typing import List
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from uuid import UUID
 
 from app_logging.logger import get_logger
@@ -11,9 +13,12 @@ from app.schemas.intake import (
     IntakeQuestionCreate, IntakeQuestionUpdate, IntakeQuestionResponse,
     IntakeResponseCreate, IntakeResponseUpdate, IntakeResponseResponse, IntakeResponseWithAnswers,
     IntakeAnswerCreate, IntakeAnswerResponse, BulkAnswerCreate,
-    IntakeFormStructure, ChildDetailsResponse
+    IntakeFormStructure, ChildDetailsResponse,
+    IntakeSectionProgress, IntakeProgressResponse
 )
 from db.models.auth import User, UserRole
+from db.models.intake import IntakeSection, IntakeQuestion, IntakeResponse, IntakeAnswer, IntakeStatus
+from db.models.clinical import Child
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -423,3 +428,199 @@ async def get_child_details(
     service = IntakeService()
     child_details = await service.get_child_details(db, str(child_id))
     return child_details
+
+
+# ============================================================================
+# PROGRESS ENDPOINT
+# ============================================================================
+
+@router.get("/progress/{child_id}", response_model=IntakeProgressResponse)
+async def get_intake_progress(
+    child_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get comprehensive intake progress for a child.
+    
+    Returns section-wise completion status showing:
+    - Which sections are completed
+    - Which sections are in progress
+    - Overall completion percentage
+    - Per-section statistics
+    
+    Role: DOCTOR, PARENT, RECEPTIONIST, HOD.
+    """
+    if current_user.role not in [UserRole.DOCTOR, UserRole.PARENT, UserRole.RECEPTIONIST, UserRole.HOD]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions"
+        )
+    
+    logger.info(
+        "intake_progress_request",
+        child_id=str(child_id)
+    )
+    
+    try:
+        # Verify child exists
+        child = await db.get(Child, str(child_id))
+        
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Child with id {child_id} not found"
+            )
+        
+        # Get the single intake response for this child (if exists)
+        response_result = await db.execute(
+            select(IntakeResponse).where(IntakeResponse.child_id == str(child_id))
+        )
+        intake_response = response_result.scalar_one_or_none()
+        
+        # Get all active sections
+        sections_result = await db.execute(
+            select(IntakeSection)
+            .where(IntakeSection.is_active == True)
+            .order_by(IntakeSection.order_number)
+        )
+        all_sections = sections_result.scalars().all()
+        
+        # Build section progress list
+        section_progress_list = []
+        sections_not_started = 0
+        sections_in_progress = 0
+        sections_completed = 0
+        total_completion = 0.0
+        
+        if not intake_response:
+            # No intake response yet - all sections are NOT_STARTED
+            for section in all_sections:
+                # Count total questions in this section
+                questions_result = await db.execute(
+                    select(func.count(IntakeQuestion.id))
+                    .where(IntakeQuestion.section_id == section.id)
+                )
+                total_questions = questions_result.scalar() or 0
+                
+                section_progress_list.append(IntakeSectionProgress(
+                    section_id=section.id,
+                    section_title=section.title,
+                    total_questions=total_questions,
+                    answered_questions=0,
+                    unanswered_questions=total_questions,
+                    completion_percentage=0.0,
+                    status="NOT_STARTED"
+                ))
+                sections_not_started += 1
+            
+            overall_status = "NOT_STARTED"
+            started_at = None
+            completed_at = None
+        else:
+            # Intake response exists - calculate per-section progress
+            # Get all answers for this response
+            answers_result = await db.execute(
+                select(IntakeAnswer)
+                .where(IntakeAnswer.response_id == intake_response.id)
+            )
+            all_answers = answers_result.scalars().all()
+            
+            # Create a set of answered question IDs for quick lookup
+            answered_question_ids = {answer.question_id for answer in all_answers}
+            
+            for section in all_sections:
+                # Get all questions for this section
+                questions_result = await db.execute(
+                    select(IntakeQuestion)
+                    .where(IntakeQuestion.section_id == section.id)
+                )
+                section_questions = questions_result.scalars().all()
+                total_questions = len(section_questions)
+                
+                # Count how many of this section's questions have been answered
+                answered_in_section = sum(
+                    1 for q in section_questions 
+                    if q.id in answered_question_ids
+                )
+                unanswered_in_section = total_questions - answered_in_section
+                
+                # Calculate completion percentage
+                completion_pct = (
+                    (answered_in_section / total_questions * 100)
+                    if total_questions > 0
+                    else 0.0
+                )
+                
+                # Determine section status
+                if answered_in_section == 0:
+                    section_status = "NOT_STARTED"
+                    sections_not_started += 1
+                elif answered_in_section < total_questions:
+                    section_status = "IN_PROGRESS"
+                    sections_in_progress += 1
+                else:
+                    section_status = "COMPLETED"
+                    sections_completed += 1
+                
+                section_progress_list.append(IntakeSectionProgress(
+                    section_id=section.id,
+                    section_title=section.title,
+                    total_questions=total_questions,
+                    answered_questions=answered_in_section,
+                    unanswered_questions=unanswered_in_section,
+                    completion_percentage=round(completion_pct, 2),
+                    status=section_status
+                ))
+                
+                # Add to total completion
+                total_completion += completion_pct
+            
+            overall_status = intake_response.status.value
+            started_at = intake_response.started_at
+            completed_at = intake_response.completed_at
+        
+        # Calculate overall completion percentage
+        overall_completion = (
+            total_completion / len(all_sections)
+            if len(all_sections) > 0
+            else 0.0
+        )
+        
+        logger.info(
+            "intake_progress_calculated",
+            child_id=str(child_id),
+            total_sections=len(all_sections),
+            not_started=sections_not_started,
+            in_progress=sections_in_progress,
+            completed=sections_completed,
+            overall_completion=round(overall_completion, 2)
+        )
+        
+        return IntakeProgressResponse(
+            child_id=child_id,
+            response_id=intake_response.id if intake_response else None,
+            overall_status=overall_status,
+            total_sections=len(all_sections),
+            sections_not_started=sections_not_started,
+            sections_in_progress=sections_in_progress,
+            sections_completed=sections_completed,
+            overall_completion_percentage=round(overall_completion, 2),
+            section_progress=section_progress_list,
+            started_at=started_at,
+            completed_at=completed_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "intake_progress_error",
+            child_id=str(child_id),
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch intake progress: {str(e)}"
+        )
