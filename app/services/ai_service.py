@@ -736,40 +736,68 @@ IMPORTANT:
         
         start_time = time.time()
         
+        # Extract applicability info to avoid f-string syntax errors
+        is_applicable = pool_data.get('is_applicable', True)
+        child_age = pool_data.get('child_age_months', 'N/A')
+        applicability_status = "NOT APPLICABLE - Zero applicable questions for this age" if not is_applicable else "APPLICABLE"
+        
+        # Build task description based on applicability
+        if not is_applicable:
+            task_desc = f"SPECIAL CASE: This pool has ZERO applicable questions/sections for the child's age. Generate a brief summary explaining that this developmental pool is not applicable for assessment at this age and therefore NOT INCLUDED IN SCORING OR DEVELOPMENTAL ANALYSIS."
+            critical_instruction = "- CRITICAL: Clearly state this pool is NOT APPLICABLE and NOT INCLUDED IN SCORING due to age"
+            overview_note = " - NOT APPLICABLE for this age"
+            obs_text = f"Not applicable for child aged {child_age} months - no questions in this developmental area are age-appropriate at this time."
+            analysis_text = f"This developmental pool contains no age-appropriate questions for a child of {child_age} months. This pool is not evaluated at this developmental stage and is excluded from scoring and analysis."
+            strengths_text = "N/A - pool not applicable for this age"
+            attention_text = "None - this pool will be assessed when the child is older and questions become age-appropriate"
+            score_text = "Not applicable - this pool is excluded from scoring for this age group (0 points, 0 max possible). This does not indicate a concern, only that assessment items are designed for different age ranges."
+        else:
+            task_desc = """Generate a comprehensive summary for this assessment pool that includes:
+- Pool Overview: Brief overview of what this pool measures
+- Key Observations: Most important findings from all sections in this pool
+- Developmental Analysis: Analysis specific to this developmental area
+- Strengths: Positive aspects observed in this pool
+- Areas for Attention: Specific areas within this pool that need attention
+- Overall Pool Score: If applicable, contextual meaning of the score"""
+            critical_instruction = ""
+            overview_note = ""
+            obs_text = "observation 1, observation 2, ..."
+            analysis_text = "detailed analysis of this developmental area"
+            strengths_text = "strength 1, strength 2, ..."
+            attention_text = "area 1 with specific recommendations, ..."
+            score_text = "interpretation of the pool score if applicable"
+        
         prompt = f"""
 You are a pediatric development specialist AI analyzing assessment data for a specific developmental pool.
 
 POOL DATA:
 {json.dumps(pool_data, indent=2)}
 
+CONTEXT:
+- Child's age: {child_age} months
+- Pool applicability: {applicability_status}
+- Total sections in pool: {pool_data.get('total_sections_in_pool', len(pool_data.get('sections', [])))}
+- Applicable sections: {pool_data.get('applicable_sections_count', len(pool_data.get('sections', [])))}
+- Non-applicable sections: {pool_data.get('non_applicable_sections_count', 0)}
+
 TASK:
-Generate a comprehensive summary for this assessment pool that includes:
-- Pool Overview: Brief overview of what this pool measures
-- Key Observations: Most important findings from all sections in this pool
-- Developmental Analysis: Analysis specific to this developmental area
-- Strengths: Positive aspects observed in this pool
-- Areas for Attention: Specific areas within this pool that need attention
-- Overall Pool Score: If applicable, contextual meaning of the score
+{task_desc}
 
 Return your response as valid JSON with this structure:
 {{
-    "pool_overview": "brief description of pool",
+    "pool_overview": "brief description of pool and what it measures{overview_note}",
     "key_observations": [
-        "observation 1",
-        "observation 2",
-        ...
+        "{obs_text}"
     ],
-    "developmental_analysis": "detailed analysis of this developmental area",
+    "developmental_analysis": "{analysis_text}",
     "strengths": [
-        "strength 1",
-        ...
+        "{strengths_text}"
     ],
     "areas_for_attention": [
-        "area 1 with specific recommendations",
-        ...
+        "{attention_text}"
     ],
-    "score_interpretation": "interpretation of the pool score if applicable",
-    "confidence_level": "high|medium|low"
+    "score_interpretation": "{score_text}",
+    "confidence_level": "high"
 }}
 
 IMPORTANT:
@@ -778,6 +806,7 @@ IMPORTANT:
 - Use evidence-based developmental knowledge
 - Be sensitive and supportive in language
 - Focus on this specific pool's developmental area
+{critical_instruction}
 """
         
         try:
@@ -1005,15 +1034,20 @@ IMPORTANT RULES
 ------------------------
 
 #Scoring Rules:
-- Domain weights:
+- Pool weights:
     - Onboarding: 0%  
     - Social Reciprocity: 25%
     - Language and Communication: 28%
     - Adaptive Behavior and Self help: 28%
     - Cognition and Play: 19%
 - Calculation of Autism Likelyhood Index:
-    - Domain % Score = (Total Score / Max Possible Score) * 100
-    - Final Autism Concerns Index (ACI) = sum of all (domain scores * domain weights)
+    - Pool % Score calculation:
+        - if Max Possible Score > 0: 
+            - Pool % Score = (Total Score / Max Possible Score) * 100
+        - else:
+            - Pool is not applicable
+    - normalized_weight = pool_weight / sum_of_applicable_weights 
+    - Final Autism Concerns Index (ACI) = sum of all (pool scores * normalized_weights)
     - Interpretation:
         - Low concern: 0 - 30
         - Moderate concern: 31 <= ACI < 60
