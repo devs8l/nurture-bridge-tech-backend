@@ -3,7 +3,7 @@ from uuid import uuid4
 from typing import Optional, List
 from enum import Enum as PyEnum
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -91,6 +91,7 @@ class User(Base, TimestampMixin):
     receptionist_profile: Mapped[Optional["Receptionist"]] = relationship("Receptionist", back_populates="user", uselist=False)
     parent_profile: Mapped[Optional["Parent"]] = relationship("Parent", back_populates="user", uselist=False)
     sent_invitations: Mapped[List["Invitation"]] = relationship("Invitation", back_populates="invited_by_user", foreign_keys="[Invitation.invited_by_user_id]")
+    sessions: Mapped[List["Session"]] = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"
@@ -182,3 +183,74 @@ class Invitation(Base): # <--- Removed TimestampMixin
     
     def __repr__(self) -> str:
         return f"<Invitation(id={self.id}, email={self.email}, status={self.status})>"
+
+
+class Session(Base, TimestampMixin):
+    """
+    User session for refresh token management.
+    Supports multi-device authentication with revocation.
+    """
+    __tablename__ = "sessions"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'device_id', name='uq_user_device'),
+        {"schema": "auth"}
+    )
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+        nullable=False
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    refresh_token_hash: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        comment="SHA-256 hash of refresh token, never store plaintext"
+    )
+
+    device_id: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        comment="Client-generated stable device identifier"
+    )
+
+    user_agent: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True
+    )
+
+    ip_address: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True
+    )
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        comment="Session expiry, should match JWT exp claim"
+    )
+
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="When session was revoked, NULL if active"
+    )
+
+    revoked_reason: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="Reason for revocation: LOGOUT, TOKEN_ROTATED, etc."
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="sessions")
+
+    def __repr__(self) -> str:
+        return f"<Session(id={self.id}, user_id={self.user_id}, device_id={self.device_id}, revoked={self.revoked_at is not None})>"

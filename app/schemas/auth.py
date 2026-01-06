@@ -22,9 +22,8 @@ class PasswordSetRequest(BaseSchema):
              raise ValueError("Passwords do not match")
 
 class TokenResponse(BaseSchema):
-    """Schema for token response."""
+    """Schema for token response. Refresh token is now in HttpOnly cookie."""
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
     name: str  # User's name

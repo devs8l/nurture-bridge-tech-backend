@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from app_logging.audit import audit_authentication, audit_authorization, audit_d
 from app_logging.id_hasher import hash_id, hash_email  # PHI protection
 from app.core.security import verify_password, create_access_token, create_refresh_token
 from app.repositories.user_repo import UserRepo
+from app.repositories.session_repo import SessionRepo
 from app.repositories.invitation_repo import InvitationRepo
 from app.schemas.invitation import InvitationCreate
 from db.models.auth import User
@@ -25,6 +26,7 @@ class AuthService:
     
     def __init__(self):
         self.user_repo = UserRepo()
+        self.session_repo = SessionRepo()
 
     async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> Optional[User]:
         """
@@ -63,16 +65,17 @@ class AuthService:
     def create_tokens(self, user_id: str, email: str, role: str, name: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate access and refresh tokens for the user.
+        DEPRECATED: Use create_session_and_tokens() instead for session management.
         """
         token_data = {"sub": user_id, "email": email, "role": role}
 
         access_token = create_access_token(data=token_data)
-        refresh_token = create_refresh_token(user_id=user_id)
+        # NOTE: This method is deprecated, cannot create refresh token without session_id
+        # refresh_token = create_refresh_token(user_id=user_id, session_id="deprecated")
 
         # Assuming settings.ACCESS_TOKEN_EXPIRE_MINUTES exists and is an integer
         return {
             "access_token": access_token,
-            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "name": name,
@@ -80,6 +83,159 @@ class AuthService:
             "tenant_id": tenant_id,
             "email": email
         }
+
+    async def create_session_and_tokens(
+        self,
+        db: AsyncSession,
+        user: User,
+        device_id: str,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> tuple[str, str, str]:
+        """
+        Create session and token pair.
+        
+        Returns:
+            Tuple of (access_token, refresh_token, session_id)
+        """
+        # Calculate expiry once to ensure JWT exp == DB expires_at
+        expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        
+        # Create new session (with placeholder hash)
+        session = await self.session_repo.create_session(
+            db=db,
+            user_id=str(user.id),
+            refresh_token_hash="placeholder",  # Will update after token generation
+            device_id=device_id,
+            expires_at=expires_at,
+            user_agent=user_agent,
+            ip_address=ip_address
+        )
+        
+        # Generate tokens
+        access_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role.value})
+        refresh_token = create_refresh_token(user_id=str(user.id), session_id=str(session.id))
+        
+        # Hash and store refresh token
+        from app.core.security import hash_refresh_token
+        session.refresh_token_hash = hash_refresh_token(refresh_token)
+        await db.commit()
+        await db.refresh(session)
+        
+        logger.info(
+            "session_and_tokens_created",
+            user_id_hash=hash_id(str(user.id)),
+            session_id_hash=hash_id(str(session.id)),
+            device_id=device_id
+        )
+        
+        return access_token, refresh_token, str(session.id)
+
+    async def refresh_access_token(
+        self,
+        db: AsyncSession,
+        refresh_token: str,
+        device_id: str,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> tuple[str, str, User]:
+        """
+        Refresh access token with session validation and rotation.
+        
+        Returns:
+            Tuple of (new_access_token, new_refresh_token, user)
+        
+        Raises:
+            HTTPException with specific error codes:
+                - SESSION_REVOKED: Session has been revoked
+                - TOKEN_EXPIRED: Session has expired
+                - INVALID_TOKEN: Token validation failed
+        """
+        # Decode token
+        from app.core.security import decode_refresh_token, hash_refresh_token
+        user_id, session_id = decode_refresh_token(refresh_token)
+        
+        # Validate session exists and is active
+        session = await self.session_repo.get_by_id(db, session_id)
+        if not session:
+            logger.warning("session_not_found", session_id_hash=hash_id(session_id))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "SESSION_REVOKED", "message": "Session not found"}
+            )
+        
+        if session.revoked_at:
+            logger.warning(
+                "session_already_revoked",
+                session_id_hash=hash_id(session_id),
+                reason=session.revoked_reason
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "SESSION_REVOKED", "message": f"Session has been revoked: {session.revoked_reason}"}
+            )
+        
+        if session.expires_at < datetime.utcnow():
+            logger.warning("session_expired", session_id_hash=hash_id(session_id))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "TOKEN_EXPIRED", "message": "Session has expired"}
+            )
+        
+        # Verify token hash matches
+        token_hash = hash_refresh_token(refresh_token)
+        if session.refresh_token_hash != token_hash:
+            logger.error(
+                "token_hash_mismatch",
+                session_id_hash=hash_id(session_id),
+                user_id_hash=hash_id(user_id)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "INVALID_TOKEN", "message": "Token validation failed"}
+            )
+        
+        # Fetch user
+        user = await self.user_repo.get(db, id=user_id)
+        if not user:
+            logger.warning("user_not_found_for_refresh", user_id_hash=hash_id(user_id))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "INVALID_TOKEN", "message": "User not found"}
+            )
+        
+        # Rotate: Revoke old session and create new one
+        await self.session_repo.revoke_session(db, session_id, reason="TOKEN_ROTATED")
+        
+        # Create new session and tokens
+        access_token, new_refresh_token, new_session_id = await self.create_session_and_tokens(
+            db, user, device_id, user_agent, ip_address
+        )
+        
+        logger.info(
+            "token_refreshed",
+            user_id_hash=hash_id(user_id),
+            old_session_id_hash=hash_id(session_id),
+            new_session_id_hash=hash_id(new_session_id)
+        )
+        
+        return access_token, new_refresh_token, user
+
+    async def logout_session(self, db: AsyncSession, refresh_token: str) -> None:
+        """
+        Logout by revoking session.
+        
+        This is idempotent - if the token is already invalid, it silently succeeds.
+        """
+        try:
+            from app.core.security import decode_refresh_token
+            user_id, session_id = decode_refresh_token(refresh_token)
+            await self.session_repo.revoke_session(db, session_id, reason="LOGOUT")
+            logger.info("session_logged_out", session_id_hash=hash_id(session_id), user_id_hash=hash_id(user_id))
+        except HTTPException:
+            # Token already invalid, ignore
+            logger.debug("logout_with_invalid_token")
+            pass
 
     async def create_invitation(
         self, 

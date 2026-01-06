@@ -47,6 +47,15 @@ class Settings:
     RATE_LIMIT_PER_MINUTE: int = config("RATE_LIMIT_PER_MINUTE", default=60, cast=int)
 
     # ========================================================================
+    # SESSION MANAGEMENT
+    # ========================================================================
+    SESSION_COOKIE_NAME: str = config("SESSION_COOKIE_NAME", default="refresh_token")
+    SESSION_COOKIE_SECURE: bool = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
+    SESSION_COOKIE_HTTPONLY: bool = config("SESSION_COOKIE_HTTPONLY", default=True, cast=bool)
+    SESSION_COOKIE_SAMESITE: str = config("SESSION_COOKIE_SAMESITE", default="lax")
+    SESSION_MAX_AGE_DAYS: int = config("SESSION_MAX_AGE_DAYS", default=30, cast=int)
+
+    # ========================================================================
     # CORS & TRUSTED HOSTS
     # ========================================================================
     CORS_ORIGINS: List[str] = config(
