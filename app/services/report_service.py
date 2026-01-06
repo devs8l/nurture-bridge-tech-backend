@@ -38,6 +38,7 @@ class ReportService:
     ) -> Optional[PoolSummary]:
         """
         Check if all sections within a pool are completed and generate summary if needed.
+        Filters sections to only those with applicable questions for the child's age.
         
         Args:
             child_id: Child ID
@@ -72,6 +73,17 @@ class ReportService:
                 )
                 return None
 
+            # Get child to calculate age
+            child = await db.get(Child, child_id)
+            if not child:
+                logger.warning("child_not_found", child_id=child_id)
+                return None
+            
+            # Calculate child's age in months
+            from datetime import date
+            today = date.today()
+            child_age_months = (today.year - child.date_of_birth.year) * 12 + (today.month - child.date_of_birth.month)
+
             # Get pool information
             pool_result = await db.execute(
                 select(AssessmentPool).where(AssessmentPool.id == pool_id)
@@ -98,10 +110,105 @@ class ReportService:
                 )
                 return None
 
-            total_sections = len(sections)
-            section_ids = [s.id for s in sections]
+            # NEW: Filter sections to only those with applicable questions for child's age
+            applicable_sections = []
+            non_applicable_sections = []
+            
+            for section in sections:
+                question_count_result = await db.execute(
+                    select(func.count(AssessmentQuestion.id))
+                    .where(
+                        AssessmentQuestion.section_id == section.id,
+                        AssessmentQuestion.min_age_months <= child_age_months,
+                        AssessmentQuestion.max_age_months >= child_age_months
+                    )
+                )
+                question_count = question_count_result.scalar() or 0
+                
+                if question_count > 0:
+                    applicable_sections.append(section)
+                else:
+                    non_applicable_sections.append(section)
+            
+            logger.info(
+                "pool_applicability_check",
+                child_id=child_id,
+                pool_id=pool_id,
+                child_age_months=child_age_months,
+                total_sections=len(sections),
+                applicable_sections=len(applicable_sections),
+                non_applicable_sections=len(non_applicable_sections)
+            )
 
-            # Check completion status for all sections
+            # Use applicable_sections for completion check
+            # If NO applicable sections, generate a "not applicable" summary
+            if len(applicable_sections) == 0:
+                logger.info(
+                    "generating_non_applicable_pool_summary",
+                    child_id=child_id,
+                    pool_id=pool_id,
+                    child_age_months=child_age_months
+                )
+                
+                # Gather minimal data for non-applicable pool
+                summary_data = {
+                    "pool_id": str(pool.id),
+                    "pool_title": pool.title,
+                    "pool_description": pool.description,
+                    "sections": [],
+                    "is_applicable": False,
+                    "child_age_months": child_age_months,
+                    "total_sections": len(sections),
+                    "applicable_sections": 0
+                }
+                
+                # Call AI to generate non-applicable summary
+                ai_result = await self.ai_service.generate_pool_summary(
+                    pool_data=summary_data,
+                    actor=f"system:pool_summary:{pool_id}"
+                )
+                
+                if not ai_result.get("success"):
+                    logger.error(
+                        "ai_non_applicable_pool_summary_failed",
+                        child_id=child_id,
+                        pool_id=pool_id,
+                        error=ai_result.get("error")
+                    )
+                    return None
+                
+                summary_content = ai_result.get("summary", {})
+                
+                # Create pool summary with zero scores
+                pool_summary = PoolSummary(
+                    child_id=child_id,
+                    pool_id=pool_id,
+                    pool_title=pool.title,
+                    summary_content=summary_content,
+                    total_sections=len(sections),
+                    completed_sections=0,  # No sections completed since none applicable
+                    total_score=0,
+                    max_possible_score=0
+                )
+                
+                db.add(pool_summary)
+                await db.commit()
+                await db.refresh(pool_summary)
+                
+                logger.info(
+                    "non_applicable_pool_summary_generated",
+                    child_id=child_id,
+                    pool_id=pool_id,
+                    summary_id=pool_summary.id
+                )
+                
+                return pool_summary
+
+            # If there ARE applicable sections, check completion
+            total_sections = len(applicable_sections)
+            section_ids = [s.id for s in applicable_sections]
+
+            # Check completion status for applicable sections only
             completed_responses_result = await db.execute(
                 select(AssessmentResponse).where(
                     AssessmentResponse.child_id == child_id,
@@ -116,7 +223,7 @@ class ReportService:
                 "pool_completion_check",
                 child_id=child_id,
                 pool_id=pool_id,
-                total_sections=total_sections,
+                total_applicable_sections=total_sections,
                 completed_sections=completed_sections
             )
 
@@ -137,13 +244,16 @@ class ReportService:
                 pool_id=pool_id
             )
 
-            # Gather all data for AI summary
+            # Gather all data for AI summary (only applicable sections)
             summary_data = await self._gather_pool_data(
                 child_id=child_id,
                 pool=pool,
-                sections=sections,
+                sections=applicable_sections,  # Pass only applicable sections
                 responses=completed_responses,
-                db=db
+                db=db,
+                child_age_months=child_age_months,
+                total_sections_in_pool=len(sections),
+                non_applicable_sections_count=len(non_applicable_sections)
             )
 
             # Call AI service to generate pool summary
@@ -173,8 +283,8 @@ class ReportService:
                 pool_id=pool_id,
                 pool_title=pool.title,
                 summary_content=summary_content,
-                total_sections=total_sections,
-                completed_sections=completed_sections,
+                total_sections=len(sections),  # Total sections in pool
+                completed_sections=completed_sections,  # Completed applicable sections
                 total_score=total_score if total_score > 0 else None,
                 max_possible_score=max_possible_score if max_possible_score > 0 else None
             )
@@ -642,7 +752,10 @@ class ReportService:
         pool: AssessmentPool,
         sections: List[AssessmentSection],
         responses: List[AssessmentResponse],
-        db: AsyncSession
+        db: AsyncSession,
+        child_age_months: int = None,
+        total_sections_in_pool: int = None,
+        non_applicable_sections_count: int = 0
     ) -> Dict[str, Any]:
         """
         Gather all data for pool summary generation.
@@ -657,7 +770,12 @@ class ReportService:
             "pool_id": str(pool.id),
             "pool_title": pool.title,
             "pool_description": pool.description,
-            "sections": []
+            "sections": [],
+            "is_applicable": True,  # Default to True, will be False only if explicitly set
+            "child_age_months": child_age_months,
+            "total_sections_in_pool": total_sections_in_pool or len(sections),
+            "applicable_sections_count": len(sections),
+            "non_applicable_sections_count": non_applicable_sections_count
         }
 
         for section in sections:

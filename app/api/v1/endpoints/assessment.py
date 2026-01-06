@@ -5,7 +5,7 @@ Assessment endpoints for handling assessment sections, questions, responses, and
 from typing import List
 from uuid import UUID
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -709,12 +709,121 @@ async def get_answer(
 
 
 # ============================================================================
+# BACKGROUND TASK: Pool Summary Generation
+# ============================================================================
+
+async def generate_pool_summaries_background(
+    child_id: str,
+    section_id: str,
+    db_connection_string: str
+):
+    """
+    Background task to check and generate pool summaries for all completed pools.
+    Runs after the response has been sent to the user.
+    
+    Args:
+        child_id: Child ID
+        section_id: Recently completed section ID
+        db_connection_string: Database connection string for creating new session
+    """
+    from app.main import get_gemini_service
+    from app.services.report_service import ReportService
+    from db.base import async_session_maker
+    
+    logger.info(
+        "background_pool_summary_task_started",
+        child_id=child_id,
+        section_id=section_id
+    )
+    
+    # Create a new database session for the background task
+    async with async_session_maker() as db:
+        try:
+            ai_service = get_gemini_service()
+            report_service = ReportService(ai_service)
+            
+            # Get all active pools
+            all_pools_result = await db.execute(
+                select(AssessmentPool).where(AssessmentPool.is_active == True)
+            )
+            all_pools = all_pools_result.scalars().all()
+            
+            # Check each pool for completion and missing summary
+            summaries_generated = 0
+            for pool in all_pools:
+                try:
+                    # Try to generate pool summary (will skip if already exists or not complete)
+                    pool_summary = await report_service.check_and_generate_pool_summary(
+                        child_id=child_id,
+                        pool_id=pool.id,
+                        db=db
+                    )
+                    
+                    if pool_summary:
+                        summaries_generated += 1
+                        logger.info(
+                            "pool_summary_background_generated",
+                            pool_id=pool.id,
+                            pool_title=pool.title,
+                            child_id=child_id,
+                            summary_id=pool_summary.id
+                        )
+                except Exception as pool_error:
+                    logger.error(
+                        "background_pool_summary_failed",
+                        pool_id=pool.id,
+                        pool_title=pool.title,
+                        error=str(pool_error)
+                    )
+                    # Continue with other pools even if one fails
+                    continue
+            
+            logger.info(
+                "background_pool_summary_check_complete",
+                child_id=child_id,
+                summaries_generated=summaries_generated
+            )
+            
+            # Try to generate final report if all pools complete
+            if summaries_generated > 0:
+                try:
+                    final_report = await report_service.check_and_generate_final_report(
+                        child_id=child_id,
+                        db=db
+                    )
+                    
+                    if final_report:
+                        logger.info(
+                            "final_report_background_generated",
+                            final_report_id=final_report.id,
+                            child_id=child_id
+                        )
+                except Exception as e:
+                    logger.error(
+                        "background_final_report_generation_failed",
+                        child_id=child_id,
+                        error=str(e)
+                    )
+                    
+        except Exception as e:
+            logger.error(
+                "background_pool_summary_task_failed",
+                child_id=child_id,
+                error=str(e)
+            )
+
+
+# ============================================================================
+# CONVERSATION-BASED SUBMISSION
+# ============================================================================
+# ============================================================================
 # CONVERSATION SUBMIT ENDPOINT
 # ============================================================================
 
 @router.post("/submit", response_model=ConversationSubmitResponse, status_code=status.HTTP_201_CREATED)
 async def submit_conversation_answers(
     submit_data: ConversationSubmitRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -726,6 +835,7 @@ async def submit_conversation_answers(
     3. Uploads answers to question_answers table
     4. Updates unanswered_questions list by removing answered questions
     5. Checks completion status and returns results
+    6. Schedules pool summary generation as background task (non-blocking)
     """
     from app.main import get_gemini_service
     
@@ -981,73 +1091,20 @@ async def submit_conversation_answers(
                 response_id=submit_data.response_id
             )
             
-            # STEP: Try to generate pool summary if pool is complete
-            try:
-                # Get section to find pool_id
-                section_result = await db.execute(
-                    select(AssessmentSection).where(AssessmentSection.id == section_id)
-                )
-                section = section_result.scalar_one_or_none()
-                
-                if section and section.pool_id:
-                    logger.info(
-                        "checking_pool_completion",
-                        section_id=section_id,
-                        pool_id=section.pool_id
-                    )
-                    
-                    # Import report service
-                    from app.services.report_service import ReportService
-                    ai_service = get_gemini_service()
-                    report_service = ReportService(ai_service)
-                    
-                    # Try to generate pool summary
-                    pool_summary = await report_service.check_and_generate_pool_summary(
-                        child_id=child_id,
-                        pool_id=section.pool_id,
-                        db=db
-                    )
-                    
-                    if pool_summary:
-                        pool_summary_generated = True
-                        pool_summary_id = str(pool_summary.id)
-                        logger.info(
-                            "pool_summary_auto_generated",
-                            pool_summary_id=pool_summary_id,
-                            pool_id=section.pool_id,
-                            child_id=child_id
-                        )
-                        
-                        # STEP: Try to generate final report if all pools complete
-                        try:
-                            final_report = await report_service.check_and_generate_final_report(
-                                child_id=child_id,
-                                db=db
-                            )
-                            
-                            if final_report:
-                                final_report_generated = True
-                                final_report_id = str(final_report.id)
-                                logger.info(
-                                    "final_report_auto_generated",
-                                    final_report_id=final_report_id,
-                                    child_id=child_id
-                                )
-                        except Exception as e:
-                            # Don't fail the whole request if final report generation fails
-                            logger.error(
-                                "final_report_generation_failed",
-                                child_id=child_id,
-                                error=str(e)
-                            )
-            except Exception as e:
-                # Don't fail the whole request if pool summary generation fails
-                logger.error(
-                    "pool_summary_generation_failed",
-                    section_id=section_id,
-                    child_id=child_id,
-                    error=str(e)
-                )
+            # Schedule background task for pool summary generation
+            # This runs AFTER the response is sent to the user (non-blocking)
+            background_tasks.add_task(
+                generate_pool_summaries_background,
+                child_id=child_id,
+                section_id=section_id,
+                db_connection_string=""  # Not needed - we use async_session_maker
+            )
+            
+            logger.info(
+                "background_pool_summary_task_scheduled",
+                child_id=child_id,
+                section_id=section_id
+            )
         
         # Build simplified mapped answers for response (question + answer only)
         mapped_answers_simplified = [
@@ -1180,6 +1237,17 @@ async def get_assessment_progress(
                 )
                 total_questions = questions_result.scalar() or 0
                 
+                # FILTER: Skip sections with zero applicable questions
+                # These won't be shown on the frontend
+                if total_questions == 0:
+                    logger.debug(
+                        "skipping_non_applicable_section",
+                        section_id=section.id,
+                        section_title=section.title,
+                        child_age_months=child_age_months
+                    )
+                    continue
+                
                 section_progress_list.append(SectionProgress(
                     section_id=section.id,
                     section_title=section.title,
@@ -1207,6 +1275,17 @@ async def get_assessment_progress(
                     )
                 )
                 total_questions = questions_result.scalar() or 0
+                
+                # FILTER: Skip sections with zero applicable questions (even if they have a response)
+                if total_questions == 0:
+                    logger.debug(
+                        "skipping_non_applicable_section_with_response",
+                        section_id=section.id,
+                        section_title=section.title,
+                        response_id=response.id,
+                        child_age_months=child_age_months
+                    )
+                    continue
                 
                 # Get count of answered questions
                 answered_result = await db.execute(
