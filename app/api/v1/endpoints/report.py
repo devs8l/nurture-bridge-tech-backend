@@ -214,6 +214,145 @@ async def hod_review_report(
     return report
 
 
+@router.post("/child/{child_id}/generate-missing")
+async def generate_missing_reports(
+    child_id: str,
+    db: AsyncSession = Depends(get_db),
+    report_service: ReportService = Depends(get_report_service)
+):
+    """
+    Check and generate any missing pool summaries and final report for a child.
+    
+    This endpoint:
+    1. Gets all active pools
+    2. For each completed pool, generates summary if missing
+    3. If all pools have summaries, generates final report if missing
+    
+    Use this for backfilling historical data or recovering from failed background tasks.
+    
+    RBAC: Doctor, Admin
+    """
+    from db.models.assessment import AssessmentPool
+    from sqlalchemy import select
+    
+    logger.info(
+        "generate_missing_reports_request",
+        child_id=child_id
+    )
+    
+    try:
+        # Get all active pools
+        pools_result = await db.execute(
+            select(AssessmentPool).where(AssessmentPool.is_active == True)
+        )
+        pools = pools_result.scalars().all()
+        
+        summaries_generated = []
+        summaries_skipped = []
+        
+        # Try to generate summary for each pool
+        for pool in pools:
+            try:
+                logger.info(
+                    "attempting_pool_summary_generation",
+                    pool_id=pool.id,
+                    pool_title=pool.title,
+                    child_id=child_id
+                )
+                
+                pool_summary = await report_service.check_and_generate_pool_summary(
+                    child_id=child_id,
+                    pool_id=pool.id,
+                    db=db
+                )
+                
+                if pool_summary:
+                    summaries_generated.append({
+                        "pool_id": str(pool.id),
+                        "pool_title": pool.title,
+                        "summary_id": str(pool_summary.id)
+                    })
+                    logger.info(
+                        "pool_summary_backfilled",
+                        pool_id=pool.id,
+                        pool_title=pool.title,
+                        summary_id=pool_summary.id
+                    )
+                else:
+                    # Returned None - could be already exists OR generation failed
+                    # Check logs for the specific reason
+                    summaries_skipped.append({
+                        "pool_id": str(pool.id),
+                        "pool_title": pool.title,
+                        "reason": "Already exists, not complete, or generation failed - check logs"
+                    })
+                    logger.warning(
+                        "pool_summary_generation_returned_none",
+                        pool_id=pool.id,
+                        pool_title=pool.title,
+                        child_id=child_id
+                    )
+            except Exception as e:
+                logger.error(
+                    "pool_summary_backfill_failed",
+                    pool_id=pool.id,
+                    pool_title=pool.title,
+                    error=str(e)
+                )
+                summaries_skipped.append({
+                    "pool_id": str(pool.id),
+                    "pool_title": pool.title,
+                    "reason": f"Error: {str(e)}"
+                })
+        
+        # Try to generate final report
+        final_report = None
+        final_report_generated = False
+        try:
+            final_report = await report_service.check_and_generate_final_report(
+                child_id=child_id,
+                db=db
+            )
+            
+            if final_report:
+                final_report_generated = True
+                logger.info(
+                    "final_report_backfilled",
+                    child_id=child_id,
+                    final_report_id=final_report.id
+                )
+        except Exception as e:
+            logger.error(
+                "final_report_backfill_failed",
+                child_id=child_id,
+                error=str(e)
+            )
+        
+        return {
+            "success": True,
+            "child_id": child_id,
+            "summaries_generated": summaries_generated,
+            "summaries_generated_count": len(summaries_generated),
+            "summaries_skipped": summaries_skipped,
+            "summaries_skipped_count": len(summaries_skipped),
+            "final_report_generated": final_report_generated,
+            "final_report_id": str(final_report.id) if final_report else None,
+            "message": f"Generated {len(summaries_generated)} pool summaries" + 
+                      (", final report generated" if final_report_generated else "")
+        }
+        
+    except Exception as e:
+        logger.error(
+            "generate_missing_reports_error",
+            child_id=child_id,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate missing reports: {str(e)}"
+        )
+
+
 # ============================================================================
 # REPORT STATUS ENDPOINT
 # ============================================================================

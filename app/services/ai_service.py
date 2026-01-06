@@ -145,10 +145,13 @@ class GeminiService:
             system_tokens = self.count_tokens(system_instruction) if system_instruction else 0
             total_input_tokens = prompt_tokens + system_tokens
             
-            # Configure generation parameters
+            # Configure generation parameters with strict JSON mode
             generation_config = genai.GenerationConfig(
                 temperature=temp,
-                max_output_tokens=max_tok
+                max_output_tokens=max_tok,
+                response_mime_type="application/json",
+                # Candidate count must be 1 for JSON mode
+                candidate_count=1
             )
             
             # Create model with system instruction if provided
@@ -806,6 +809,15 @@ IMPORTANT:
 - Use evidence-based developmental knowledge
 - Be sensitive and supportive in language
 - Focus on this specific pool's developmental area
+
+CRITICAL JSON SAFETY RULES:
+- DO NOT use apostrophes anywhere (child's → child, don't → do not)
+- DO NOT use contractions (can't → cannot, won't → will not)
+- DO NOT use possessive forms (write "the child" instead of "child's")
+- Use simple, clear language without special punctuation
+- Avoid quotation marks within your text
+- Write full words, never shortened forms
+
 {critical_instruction}
 """
         
@@ -822,7 +834,7 @@ IMPORTANT:
                 actor=actor,
                 temperature=0.4,
                 max_tokens=2048,
-                system_instruction="You are a pediatric development specialist providing evidence-based, compassionate assessments. Always return valid JSON."
+                system_instruction="You are a pediatric development specialist. You MUST return ONLY valid JSON. Never use apostrophes, contractions, or possessive forms in your text. Write full words only."
             )
             
             # Parse JSON response
@@ -871,11 +883,74 @@ IMPORTANT:
                     response_preview=response[:200]
                 )
                 
-                return {
-                    "success": False,
-                    "error": "Failed to parse JSON response",
-                    "raw_response": response
-                }
+                # Try to sanitize the JSON
+                try:
+                    sanitized = response
+                    
+                    # Remove any markdown code blocks
+                    if "```json" in sanitized:
+                        sanitized = sanitized.split("```json")[1].split("```")[0].strip()
+                    elif "```" in sanitized:
+                        sanitized = sanitized.split("```")[1].split("```")[0].strip()
+                    
+                    # Use json_repair to fix malformed JSON
+                    try:
+                        from json_repair import repair_json
+                        sanitized = repair_json(sanitized)
+                        parsed_result = json.loads(sanitized)
+                        
+                        logger.info(
+                            "gemini_pool_summary_repaired_success",
+                            actor=actor,
+                            pool_id=pool_data.get("pool_id")
+                        )
+                        
+                        return {
+                            "success": True,
+                            "summary": parsed_result,
+                            "raw_response": response,
+                            "was_sanitized": True
+                        }
+                    except ImportError:
+                        # json_repair not available, try manual fix
+                        logger.warning("json_repair_not_available", actor=actor)
+                        
+                        # Manual fix: escape unescaped quotes in string values
+                        # This is a simple heuristic for common issues
+                        import re
+                        
+                        # Fix common apostrophe issues: childs -> child's (escaped)
+                        sanitized = re.sub(r'([a-z])s\s', r"\1's ", sanitized)
+                        
+                        parsed_result = json.loads(sanitized)
+                        
+                        logger.info(
+                            "gemini_pool_summary_sanitized_success",
+                            actor=actor,
+                            pool_id=pool_data.get("pool_id")
+                        )
+                        
+                        return {
+                            "success": True,
+                            "summary": parsed_result,
+                            "raw_response": response,
+                            "was_sanitized": True
+                        }
+                    
+                except Exception as sanitize_error:
+                    logger.error(
+                        "gemini_pool_summary_sanitization_failed",
+                        actor=actor,
+                        original_error=str(e),
+                        sanitize_error=str(sanitize_error),
+                        response_preview=response[:500]
+                    )
+                    
+                    return {
+                        "success": False,
+                        "error": "Failed to parse JSON response after sanitization",
+                        "raw_response": response
+                    }
                 
         except Exception as e:
             duration_ms = round((time.time() - start_time) * 1000, 2)
@@ -1003,25 +1078,29 @@ Return ONLY valid JSON in the following exact structure:
     "key_strengths": [
       "Observed developmental strength",
       "Another consistent strength"
+      #Wrap this up in 4-5 points without losing any important information
     ],
     "areas_of_concern": [
       "Specific developmental concern",
       "Another area requiring support"
+      #Wrap this up in 4-5 points without losing any important information
     ],
     "observed_patterns_of_autistic_features": [
       "Observed social-communication pattern",
       "Behavioral or interactional pattern"
+      #Wrap this up in 4-5 points without losing any important information
     ],
     "functional_impact_on_daily_life": [
       "Impact on home routines",
       "Impact on social participation or learning"
+      #Wrap this up in 4-5 points without losing any important information
     ]
   }},
 
   "diagnostic_consideration": {{
     "final_score": {{
-      "total_score": "numeric value",
-      "max_possible_score": "numeric value",
+      "total_score": "put numeric value of autism concerns index here",
+      "max_possible_score": "Put 100 in here",
       "autism_concerns_index": "numeric value",
       "interpretation": "Low | Moderate | High concern"
     }},
@@ -1063,6 +1142,15 @@ IMPORTANT RULES
 - Maintain neutral, non-alarming clinical tone.
 - Balance strengths and concerns clearly.
 - Do NOT provide a definitive diagnosis.
+
+CRITICAL JSON SAFETY RULES (FOLLOW STRICTLY):
+- DO NOT use apostrophes ANYWHERE (child's → child, parent's → parent)
+- DO NOT use contractions (don't → do not, can't → cannot, won't → will not)
+- DO NOT use possessive forms (write "the child" not "child's abilities")
+- Use simple, clear language without special punctuation marks
+- Avoid quotation marks within your response text
+- Write full words only, never shortened or contracted forms
+- Replace all apostrophes with simple alternatives before generating JSON
 """
 
         
@@ -1078,8 +1166,8 @@ IMPORTANT RULES
                 prompt=prompt,
                 actor=actor,
                 temperature=0.4,
-                max_tokens=4096,
-                system_instruction="You are a pediatric development specialist providing evidence-based, compassionate final assessment reports. Always return valid JSON."
+                max_tokens=16384,
+                system_instruction="You are a pediatric development specialist. You MUST return ONLY valid JSON. Never use apostrophes, contractions, or possessive forms. Write full words only."
             )
             
             # Parse JSON response
@@ -1128,11 +1216,37 @@ IMPORTANT RULES
                     response_preview=response[:200]
                 )
                 
-                return {
-                    "success": False,
-                    "error": "Failed to parse JSON response",
-                    "raw_response": response
-                }
+                # Try to repair JSON
+                try:
+                    from json_repair import repair_json
+                    repaired = repair_json(cleaned_response)
+                    parsed_result = json.loads(repaired)
+                    
+                    logger.info(
+                        "gemini_final_report_repaired_success",
+                        actor=actor,
+                        child_id=child_info.get("child_id")
+                    )
+                    
+                    return {
+                        "success": True,
+                        "summary": parsed_result,
+                        "raw_response": response,
+                        "was_repaired": True
+                    }
+                except Exception as repair_error:
+                    logger.error(
+                        "gemini_final_report_repair_failed",
+                        actor=actor,
+                        original_error=str(e),
+                        repair_error=str(repair_error)
+                    )
+                    
+                    return {
+                        "success": False,
+                        "error": "Failed to parse JSON response after repair",
+                        "raw_response": response
+                    }
                 
         except Exception as e:
             duration_ms = round((time.time() - start_time) * 1000, 2)

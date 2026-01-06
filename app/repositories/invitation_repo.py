@@ -74,3 +74,20 @@ class InvitationRepo(BaseRepository[Invitation, InvitationCreate, InvitationCrea
         await db.commit()
         await db.refresh(invitation)
         return invitation
+
+    async def get_by_tenant_and_roles(
+        self, 
+        db: AsyncSession, 
+        *, 
+        tenant_id: str, 
+        roles: list[UserRole]
+    ) -> list[Invitation]:
+        """
+        Get all invitations for a tenant filtered by specific roles.
+        """
+        query = select(Invitation).where(
+            Invitation.tenant_id == tenant_id,
+            Invitation.role_to_assign.in_(roles)
+        ).order_by(Invitation.created_at.desc())
+        result = await db.execute(query)
+        return result.scalars().all()

@@ -12,7 +12,7 @@ from app.core.security import verify_password, create_access_token, create_refre
 from app.repositories.user_repo import UserRepo
 from app.repositories.invitation_repo import InvitationRepo
 from app.schemas.invitation import InvitationCreate
-from db.models.auth import User
+from db.models.auth import User, Invitation
 from config.settings import settings
 
 logger = get_logger(__name__)
@@ -25,6 +25,7 @@ class AuthService:
     
     def __init__(self):
         self.user_repo = UserRepo()
+        self.invitation_repo = InvitationRepo()
 
     async def authenticate_user(self, db: AsyncSession, email: str, password: str) -> Optional[User]:
         """
@@ -104,6 +105,36 @@ class AuthService:
         )
         logger.info("invitation_created", invitation_id_hash=hash_id(str(invitation.id)), email_hash=hash_email(invitation.email))
         return invitation
+
+    async def get_invitations_for_user(
+        self, 
+        db: AsyncSession, 
+        current_user: User
+    ) -> list[Invitation]:
+        """
+        Get invitations based on the current user's role.
+        - RECEPTIONIST: Can view PARENT invitations in their tenant
+        - TENANT_ADMIN: Can view HOD, DOCTOR, RECEPTIONIST invitations in their tenant
+        """
+        from db.models.auth import UserRole
+        
+        # Determine which roles to filter by
+        if current_user.role == UserRole.RECEPTIONIST:
+            allowed_roles = [UserRole.PARENT]
+        elif current_user.role == UserRole.TENANT_ADMIN:
+            allowed_roles = [UserRole.HOD, UserRole.DOCTOR, UserRole.RECEPTIONIST]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to view invitations"
+            )
+        
+        # Fetch invitations
+        return await self.invitation_repo.get_by_tenant_and_roles(
+            db, 
+            tenant_id=str(current_user.tenant_id), 
+            roles=allowed_roles
+        )
 
     async def accept_invitation(self, db: AsyncSession, token: str, name: str, password: str) -> User:
         """

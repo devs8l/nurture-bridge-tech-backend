@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import uuid4
 from typing import Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, TIMESTAMP
+from sqlalchemy import String, Integer, DateTime, ForeignKey, TIMESTAMP, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -16,7 +16,10 @@ class PoolSummary(Base, TimestampMixin):
     One summary per child per pool.
     """
     __tablename__ = "pool_summaries"
-    __table_args__ = {"schema": "report"}
+    __table_args__ = (
+        UniqueConstraint('child_id', 'pool_id', name='uq_pool_summaries_child_pool'),
+        {"schema": "report"}
+    )
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),

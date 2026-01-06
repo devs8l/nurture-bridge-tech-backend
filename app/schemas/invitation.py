@@ -37,4 +37,9 @@ class InvitationResponse(BaseSchema):
     expires_at: datetime
     # We generally do NOT return the token in the API response for security (it's sent via email).
     # But for development/MVP where email isn't set up, we return it to allow copy-pasting.
-    token: str 
+    token: str
+
+class InvitationListResponse(BaseSchema):
+    """Schema for listing invitations."""
+    invitations: list[InvitationResponse]
+    total: int 

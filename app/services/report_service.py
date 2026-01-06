@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 from fastapi import HTTPException, status
 
 from db.models.report import PoolSummary, FinalReport
-from db.models.assessment import AssessmentPool, AssessmentSection, AssessmentResponse, AssessmentQuestionAnswer, AssessmentStatus
+from db.models.assessment import AssessmentPool, AssessmentSection, AssessmentResponse, AssessmentQuestionAnswer, AssessmentStatus, AssessmentQuestion
 from db.models.clinical import Child
 from app_logging.logger import get_logger
 

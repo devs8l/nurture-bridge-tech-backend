@@ -9,7 +9,7 @@ from app.api.deps import get_db
 from app.services.auth_service import AuthService
 from app.schemas.auth import LoginRequest, TokenResponse, PasswordSetRequest, RefreshTokenRequest
 from app.schemas.user import UserResponse
-from app.schemas.invitation import InvitationCreate, InvitationResponse
+from app.schemas.invitation import InvitationCreate, InvitationResponse, InvitationListResponse
 from security.rbac import require_role
 from db.models.auth import UserRole
 
@@ -119,6 +119,26 @@ async def create_invitation(
         db, 
         creator_user_id=str(current_user.id), 
         invitation_data=invitation_data
+    )
+
+@router.get("/invitations", response_model=InvitationListResponse)
+async def get_invitations(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get invitations based on caller's role.
+    
+    Permission Rules:
+    - RECEPTIONIST → can view PARENT invitations
+    - TENANT_ADMIN → can view HOD, DOCTOR, RECEPTIONIST invitations
+    """
+    service = AuthService()
+    invitations = await service.get_invitations_for_user(db, current_user)
+    
+    return InvitationListResponse(
+        invitations=invitations,
+        total=len(invitations)
     )
 
 @router.post("/login", response_model=TokenResponse)

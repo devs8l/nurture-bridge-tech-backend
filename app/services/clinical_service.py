@@ -139,7 +139,7 @@ class ClinicalService:
         logger.info("getting_doctor_by_id", doctor_id_hash=hash_id(doctor_id), tenant_id_hash=hash_id(tenant_id))
         
         # Fetch doctor by ID
-        doctor = await self.doctor_repo.get_by_id(db, id=doctor_id)
+        doctor = await self.doctor_repo.get(db, id=doctor_id)
         
         if not doctor:
             logger.warning("doctor_not_found", doctor_id_hash=hash_id(doctor_id))

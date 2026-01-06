@@ -4,6 +4,7 @@ Assessment endpoints for handling assessment sections, questions, responses, and
 
 from typing import List
 from uuid import UUID
+import asyncio
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -728,7 +729,7 @@ async def generate_pool_summaries_background(
     """
     from app.main import get_gemini_service
     from app.services.report_service import ReportService
-    from db.base import async_session_maker
+    from db.base import async_session
     
     logger.info(
         "background_pool_summary_task_started",
@@ -737,56 +738,51 @@ async def generate_pool_summaries_background(
     )
     
     # Create a new database session for the background task
-    async with async_session_maker() as db:
+    async with async_session() as db:
         try:
             ai_service = get_gemini_service()
             report_service = ReportService(ai_service)
             
-            # Get all active pools
-            all_pools_result = await db.execute(
-                select(AssessmentPool).where(AssessmentPool.is_active == True)
-            )
-            all_pools = all_pools_result.scalars().all()
+            # TARGETED STRATEGY: Only process the relevant pool for efficiency
+            # Get the section to find its pool_id
+            section_result = await db.execute(select(AssessmentSection).where(AssessmentSection.id == section_id))
+            section = section_result.scalar_one_or_none()
             
-            # Check each pool for completion and missing summary
-            summaries_generated = 0
-            for pool in all_pools:
+            if not section or not section.pool_id:
+                logger.warning("background_task_no_pool_for_section", section_id=section_id)
+                return
+
+            target_pool_id = section.pool_id
+            
+            # Retry mechanism for robustness (Fail-safe)
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
-                    # Try to generate pool summary (will skip if already exists or not complete)
+                    logger.info(
+                        "background_task_attempt_start",
+                        child_id=child_id,
+                        pool_id=target_pool_id,
+                        attempt=attempt+1
+                    )
+
+                    # 1. Generate Pool Summary (Targeted)
                     pool_summary = await report_service.check_and_generate_pool_summary(
                         child_id=child_id,
-                        pool_id=pool.id,
+                        pool_id=target_pool_id,
                         db=db
                     )
                     
                     if pool_summary:
-                        summaries_generated += 1
                         logger.info(
                             "pool_summary_background_generated",
-                            pool_id=pool.id,
-                            pool_title=pool.title,
+                            pool_id=target_pool_id,
                             child_id=child_id,
                             summary_id=pool_summary.id
                         )
-                except Exception as pool_error:
-                    logger.error(
-                        "background_pool_summary_failed",
-                        pool_id=pool.id,
-                        pool_title=pool.title,
-                        error=str(pool_error)
-                    )
-                    # Continue with other pools even if one fails
-                    continue
-            
-            logger.info(
-                "background_pool_summary_check_complete",
-                child_id=child_id,
-                summaries_generated=summaries_generated
-            )
-            
-            # Try to generate final report if all pools complete
-            if summaries_generated > 0:
-                try:
+                    
+                    # 2. Try to generate final report (Always check if pool summary exists)
+                    # We check final report even if pool summary returned None (meaning it already existed)
+                    # primarily to catch cases where final report failed previously.
                     final_report = await report_service.check_and_generate_final_report(
                         child_id=child_id,
                         db=db
@@ -798,12 +794,25 @@ async def generate_pool_summaries_background(
                             final_report_id=final_report.id,
                             child_id=child_id
                         )
+                    
+                    # If we got here without exception, strict success isn't required for break,
+                    # but we assume the process ran without crashing.
+                    break
+                    
                 except Exception as e:
                     logger.error(
-                        "background_final_report_generation_failed",
+                        "background_task_attempt_failed",
                         child_id=child_id,
+                        pool_id=target_pool_id,
+                        attempt=attempt+1,
                         error=str(e)
                     )
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s
+                        logger.info("background_task_retrying", wait_seconds=wait_time)
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.error("background_task_failed_final", child_id=child_id)
                     
         except Exception as e:
             logger.error(
