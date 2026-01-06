@@ -204,3 +204,39 @@ class ChildDetailsResponse(BaseSchema):
     
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# PROGRESS SCHEMAS
+# ============================================================================
+
+class IntakeSectionProgress(BaseSchema):
+    """Schema for individual section progress in intake."""
+    section_id: UUID
+    section_title: str
+    total_questions: int
+    answered_questions: int
+    unanswered_questions: int
+    completion_percentage: float
+    status: str = Field(..., description="NOT_STARTED, IN_PROGRESS, or COMPLETED")
+    
+    class Config:
+        from_attributes = True
+
+
+class IntakeProgressResponse(BaseSchema):
+    """Schema for overall intake progress response."""
+    child_id: UUID
+    response_id: Optional[UUID] = None
+    overall_status: str = Field(..., description="Overall intake status")
+    total_sections: int
+    sections_not_started: int
+    sections_in_progress: int
+    sections_completed: int
+    overall_completion_percentage: float
+    section_progress: List[IntakeSectionProgress]
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

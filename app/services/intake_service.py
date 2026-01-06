@@ -263,6 +263,55 @@ class IntakeService:
     # ANSWER OPERATIONS
     # ========================================================================
     
+    async def _check_and_update_completion_status(
+        self,
+        db: AsyncSession,
+        response_id: str
+    ) -> None:
+        """Check if all questions are answered and update status to COMPLETED if true."""
+        from sqlalchemy import select, func
+        
+        # Get the response
+        response = await self.get_response(db, response_id)
+        
+        # Skip if already completed
+        if response.status == IntakeStatus.COMPLETED:
+            return
+        
+        # Get total count of all questions across all active sections
+        total_questions_result = await db.execute(
+            select(func.count(IntakeQuestion.id))
+            .join(IntakeSection)
+            .where(IntakeSection.is_active == True)
+        )
+        total_questions = total_questions_result.scalar() or 0
+        
+        # Get count of answered questions for this response
+        answered_count_result = await db.execute(
+            select(func.count(IntakeAnswer.id))
+            .where(IntakeAnswer.response_id == response_id)
+        )
+        answered_count = answered_count_result.scalar() or 0
+        
+        logger.info(
+            "checking_intake_completion_status",
+            response_id=response_id,
+            total_questions=total_questions,
+            answered_count=answered_count
+        )
+        
+        # If all questions are answered, mark as completed
+        if answered_count >= total_questions > 0:
+            response.status = IntakeStatus.COMPLETED
+            response.completed_at = datetime.utcnow()
+            await self.response_repo.update(db, response)
+            
+            logger.info(
+                "intake_auto_completed",
+                response_id=response_id,
+                total_questions=total_questions
+            )
+    
     async def save_answer(
         self,
         db: AsyncSession,
@@ -276,7 +325,7 @@ class IntakeService:
         # Verify question exists
         await self.get_question(db, str(answer_data.question_id))
         
-        return await self.answer_repo.upsert_answer(
+        answer = await self.answer_repo.upsert_answer(
             db=db,
             response_id=response_id,
             question_id=str(answer_data.question_id),
@@ -284,6 +333,11 @@ class IntakeService:
             answer_bucket=answer_data.answer_bucket,
             score=answer_data.score
         )
+        
+        # Check if all questions are answered and auto-update status
+        await self._check_and_update_completion_status(db, response_id)
+        
+        return answer
     
     async def save_bulk_answers(
         self,
@@ -297,8 +351,21 @@ class IntakeService:
         
         saved_answers = []
         for answer_data in answers:
-            answer = await self.save_answer(db, response_id, answer_data)
+            # Verify question exists
+            await self.get_question(db, str(answer_data.question_id))
+            
+            answer = await self.answer_repo.upsert_answer(
+                db=db,
+                response_id=response_id,
+                question_id=str(answer_data.question_id),
+                raw_answer=answer_data.raw_answer,
+                answer_bucket=answer_data.answer_bucket,
+                score=answer_data.score
+            )
             saved_answers.append(answer)
+        
+        # Check completion status once after all answers are saved
+        await self._check_and_update_completion_status(db, response_id)
         
         return saved_answers
     
