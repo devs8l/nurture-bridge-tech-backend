@@ -1082,6 +1082,50 @@ async def submit_conversation_answers(
         if section_complete and response.status != AssessmentStatus.COMPLETED:
             response.status = AssessmentStatus.COMPLETED
             response.completed_at = datetime.utcnow()
+            
+            # Calculate total scores for this section
+            # Sum all answer scores
+            total_score_result = await db.execute(
+                select(func.sum(AssessmentQuestionAnswer.score))
+                .where(AssessmentQuestionAnswer.response_id == submit_data.response_id)
+            )
+            total_score = total_score_result.scalar() or 0
+            
+            # Calculate max possible score (sum of max scores for all answered questions)
+            # Get all answered question IDs
+            answered_question_ids_result = await db.execute(
+                select(AssessmentQuestionAnswer.question_id)
+                .where(AssessmentQuestionAnswer.response_id == submit_data.response_id)
+            )
+            answered_question_ids = [row[0] for row in answered_question_ids_result.all()]
+            
+            # Get questions and calculate max scores based on age protocol
+            max_possible_score = 0
+            if answered_question_ids:
+                questions_result = await db.execute(
+                    select(AssessmentQuestion)
+                    .where(AssessmentQuestion.id.in_(answered_question_ids))
+                )
+                questions = questions_result.scalars().all()
+                
+                for question in questions:
+                    # Get max score from age_protocol for this child's age
+                    age_protocol = question.age_protocol or {}
+                    scoring = age_protocol.get("scoring", {})
+                    max_score = scoring.get("max_score", 4)  # Default to 4 if not specified
+                    max_possible_score += max_score
+            
+            # Store scores in response
+            response.total_score = total_score
+            response.max_possible_score = max_possible_score
+            
+            logger.info(
+                "section_scores_calculated",
+                response_id=submit_data.response_id,
+                total_score=total_score,
+                max_possible_score=max_possible_score
+            )
+            
         elif answers_created > 0 and response.status in (AssessmentStatus.NOT_STARTED, AssessmentStatus.PROCESSING):
             # Transition from NOT_STARTED or PROCESSING (error recovery) to IN_PROGRESS
             response.status = AssessmentStatus.IN_PROGRESS

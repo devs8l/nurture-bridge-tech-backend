@@ -347,20 +347,61 @@ class ReportService:
                 )
                 return None
 
+            # Get child to calculate age for filtering
+            child = await db.get(Child, child_id)
+            if not child:
+                logger.error("child_not_found", child_id=child_id)
+                return None
+            
+            from datetime import date
+            today = date.today()
+            child_age_months = (today.year - child.date_of_birth.year) * 12 + (today.month - child.date_of_birth.month)
+
             # Get all active pools
             all_pools_result = await db.execute(
                 select(AssessmentPool).where(AssessmentPool.is_active == True)
             )
             all_pools = all_pools_result.scalars().all()
-            total_pools = len(all_pools)
+
+            # Filter pools to only those with applicable sections for this child's age
+            applicable_pools = []
+            for pool in all_pools:
+                # Get sections in this pool
+                sections_result = await db.execute(
+                    select(AssessmentSection).where(
+                        AssessmentSection.pool_id == pool.id,
+                        AssessmentSection.is_active == True
+                    )
+                )
+                pool_sections = sections_result.scalars().all()
+                
+                # Check if pool has any sections with applicable questions
+                has_applicable_section = False
+                for section in pool_sections:
+                    question_count_result = await db.execute(
+                        select(func.count(AssessmentQuestion.id))
+                        .where(
+                            AssessmentQuestion.section_id == section.id,
+                            AssessmentQuestion.min_age_months <= child_age_months,
+                            AssessmentQuestion.max_age_months >= child_age_months
+                        )
+                    )
+                    if question_count_result.scalar() > 0:
+                        has_applicable_section = True
+                        break
+                
+                if has_applicable_section:
+                    applicable_pools.append(pool)
+            
+            total_pools = len(applicable_pools)
 
             if total_pools == 0:
-                logger.warning("no_active_pools")
+                logger.warning("no_applicable_pools_for_child_age", child_age_months=child_age_months)
                 return None
 
-            pool_ids = [p.id for p in all_pools]
+            pool_ids = [p.id for p in applicable_pools]
 
-            # Get all pool summaries for this child
+            # Get all pool summaries for this child (only for applicable pools)
             pool_summaries_result = await db.execute(
                 select(PoolSummary).where(
                     PoolSummary.child_id == child_id,
@@ -373,23 +414,24 @@ class ReportService:
             logger.info(
                 "final_report_completion_check",
                 child_id=child_id,
+                child_age_months=child_age_months,
                 total_pools=total_pools,
                 completed_pools=completed_pools,
                 pool_ids=pool_ids,
                 summary_pool_ids=[ps.pool_id for ps in pool_summaries]
             )
 
-            # Not all pools have summaries yet
+            # Not all applicable pools have summaries yet
             if completed_pools < total_pools:
                 logger.warning(
-                    "not_all_pools_complete",
+                    "not_all_applicable_pools_complete",
                     child_id=child_id,
                     progress=f"{completed_pools}/{total_pools}",
                     missing_pools=[pid for pid in pool_ids if pid not in [ps.pool_id for ps in pool_summaries]]
                 )
                 return None
 
-            # All pools complete, generate final report
+            # All applicable pools complete, generate final report
             logger.info(
                 "generating_final_report",
                 child_id=child_id

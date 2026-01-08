@@ -603,6 +603,8 @@ IMPORTANT:
 - Return ONLY valid JSON, no markdown formatting
 - Be thorough but concise
 - Use evidence-based developmental knowledge
+- If there are any follow up questions in conversation but those follow question do not exists in questions array then map those under the root question.
+- If there is any nummeric data but  written in words instead of number then convert it to number. Example three kilo -> 3 kilo
 - Be sensitive and supportive in language
 - Highlight both concerns and strengths
 """
@@ -805,7 +807,8 @@ Return your response as valid JSON with this structure:
 
 IMPORTANT:
 - Return ONLY valid JSON, no markdown formatting
-- Be thorough but concise
+- Be thorough but concise. Do not include any additional text.
+- Keep it short and concise without losing any critical information.
 - Use evidence-based developmental knowledge
 - Be sensitive and supportive in language
 - Focus on this specific pool's developmental area
@@ -833,7 +836,7 @@ CRITICAL JSON SAFETY RULES:
                 prompt=prompt,
                 actor=actor,
                 temperature=0.4,
-                max_tokens=2048,
+                max_tokens=8192,  # Increased for large pools like Onboarding
                 system_instruction="You are a pediatric development specialist. You MUST return ONLY valid JSON. Never use apostrophes, contractions, or possessive forms in your text. Write full words only."
             )
             
