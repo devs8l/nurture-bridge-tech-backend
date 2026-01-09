@@ -11,7 +11,8 @@ from app.schemas.clinical import (
     ReceptionistUpdate, ReceptionistResponse,
     ParentUpdate, ParentResponse, AssignDoctorToParent,
     ChildCreate, ChildUpdate, ChildResponse,
-    StaffMemberResponse
+    StaffMemberResponse,
+    ParentWithReportsResponse
 )
 from db.models.auth import User, UserRole
 
@@ -126,6 +127,35 @@ async def get_my_assigned_children(
         )
     
     return await service.get_doctor_children(db, doctor_id=str(doctor.id))
+
+
+@router.get("/doctors/me/parents-with-reports", response_model=List[ParentWithReportsResponse])
+async def get_my_parents_with_reports(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all parents assigned to current doctor with their children and report status.
+    Role: DOCTOR only.
+    
+    Returns parents with children including report generation and review status.
+    """
+    if current_user.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only doctors can access this endpoint"
+        )
+    
+    service = ClinicalService()
+    doctor = await service.get_doctor_by_user_id(db, user_id=str(current_user.id))
+    
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Doctor profile not found"
+        )
+    
+    return await service.get_doctor_parents_with_reports(db, doctor_id=str(doctor.id))
 
 # ============================================================================
 # HOD ENDPOINTS
@@ -413,7 +443,7 @@ async def list_doctors(
 ):
     """
     List all doctors in tenant.
-    Role: TENANT_ADMIN or SUPER_ADMIN or RECEPTIONIST.
+    Role: TENANT_ADMIN or SUPER_ADMIN or HOD or RECEPTIONIST.
     """
     if current_user.role not in [UserRole.TENANT_ADMIN, UserRole.RECEPTIONIST, UserRole.HOD]:
         raise HTTPException(

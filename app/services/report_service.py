@@ -691,6 +691,7 @@ class ReportService:
         self,
         report_id: str,
         doctor_id: str,
+        notes: Optional[str],
         db: AsyncSession
     ) -> FinalReport:
         """
@@ -699,6 +700,7 @@ class ReportService:
         Args:
             report_id: Report ID
             doctor_id: Doctor ID performing review
+            notes: Optional review notes from doctor
             db: Database session
             
         Returns:
@@ -707,6 +709,8 @@ class ReportService:
         Raises:
             HTTPException: If report not found or already reviewed
         """
+        from app_logging.id_hasher import hash_id
+        
         report = await db.get(FinalReport, report_id)
 
         if not report:
@@ -722,14 +726,16 @@ class ReportService:
             )
 
         report.doctor_reviewed_at = datetime.utcnow()
+        report.doctor_notes = notes  # Store the notes
         await db.commit()
         await db.refresh(report)
 
         logger.info(
             "doctor_reviewed_report",
-            report_id=report_id,
-            doctor_id=doctor_id,
-            child_id=report.child_id
+            report_id_hash=hash_id(report_id),
+            doctor_id_hash=hash_id(doctor_id),
+            child_id_hash=hash_id(report.child_id),
+            has_notes=bool(notes)
         )
 
         return report
@@ -738,6 +744,7 @@ class ReportService:
         self,
         report_id: str,
         hod_id: str,
+        notes: Optional[str],
         db: AsyncSession
     ) -> FinalReport:
         """
@@ -746,6 +753,7 @@ class ReportService:
         Args:
             report_id: Report ID
             hod_id: HOD ID performing review
+            notes: Optional review notes from HOD
             db: Database session
             
         Returns:
@@ -754,6 +762,8 @@ class ReportService:
         Raises:
             HTTPException: If report not found, not doctor-reviewed, or already HOD-reviewed
         """
+        from app_logging.id_hasher import hash_id
+        
         report = await db.get(FinalReport, report_id)
 
         if not report:
@@ -775,17 +785,80 @@ class ReportService:
             )
 
         report.hod_reviewed_at = datetime.utcnow()
+        report.hod_notes = notes  # Store the notes
         await db.commit()
         await db.refresh(report)
 
         logger.info(
             "hod_reviewed_report",
-            report_id=report_id,
-            hod_id=hod_id,
-            child_id=report.child_id
+            report_id_hash=hash_id(report_id),
+            hod_id_hash=hash_id(hod_id),
+            child_id_hash=hash_id(report.child_id),
+            has_notes=bool(notes)
         )
 
         return report
+
+    async def get_pending_hod_reviews(
+        self,
+        tenant_id: str,
+        db: AsyncSession
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all reports that are doctor-reviewed but not HOD-reviewed for a tenant.
+        
+        Args:
+            tenant_id: Tenant ID to filter reports
+            db: Database session
+            
+        Returns:
+            List of pending review data with child, parent, and doctor info
+        """
+        from db.models.clinical import Child, Parent, Doctor
+        
+        # Query for reports that are doctor-reviewed but not HOD-reviewed
+        # Join with child, parent, and doctor to get complete information
+        query = (
+            select(FinalReport, Child, Parent, Doctor)
+            .join(Child, FinalReport.child_id == Child.id)
+            .join(Parent, Child.parent_id == Parent.id)
+            .join(Doctor, Parent.assigned_doctor_id == Doctor.id)
+            .where(
+                Child.tenant_id == tenant_id,
+                FinalReport.doctor_reviewed_at.isnot(None),
+                FinalReport.hod_reviewed_at.is_(None)
+            )
+            .order_by(FinalReport.doctor_reviewed_at.desc())
+        )
+        
+        result = await db.execute(query)
+        rows = result.all()
+        
+        pending_reviews = []
+        for report, child, parent, doctor in rows:
+            pending_reviews.append({
+                "report_id": str(report.id),
+                "child_id": str(child.id),
+                "child_first_name": child.first_name,
+                "child_last_name": child.last_name,
+                "child_date_of_birth": child.date_of_birth.isoformat(),
+                "parent_id": str(parent.id),
+                "parent_first_name": parent.first_name,
+                "parent_last_name": parent.last_name,
+                "generated_at": report.generated_at,
+                "doctor_reviewed_at": report.doctor_reviewed_at,
+                "doctor_id": str(doctor.id),
+                "doctor_first_name": doctor.first_name,
+                "doctor_last_name": doctor.last_name
+            })
+        
+        logger.info(
+            "pending_hod_reviews_fetched",
+            tenant_id=tenant_id,
+            count=len(pending_reviews)
+        )
+        
+        return pending_reviews
 
     # Helper methods
     async def _gather_pool_data(

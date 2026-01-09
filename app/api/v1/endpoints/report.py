@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user  # Added for RBAC
-from db.models.auth import User  # Added for type hints
+from db.models.auth import User, UserRole  # Added for type hints
+from security.rbac import require_role  # RBAC protection
 
 from app.schemas.report import (
     PoolSummaryResponse,
@@ -16,7 +17,8 @@ from app.schemas.report import (
     HODReviewRequest,
     ReportStatusResponse,
     PoolStatus,
-    ReviewStatus
+    ReviewStatus,
+    PendingReviewResponse
 )
 from db.models.report import PoolSummary, FinalReport
 from db.models.assessment import AssessmentPool, AssessmentSection, AssessmentResponse, AssessmentStatus
@@ -159,7 +161,7 @@ async def regenerate_final_report(
 async def doctor_review_report(
     report_id: str,
     review_request: DoctorReviewRequest,
-    doctor_id: str = "current_doctor_id",  # TODO: Get from auth context
+    current_user: User = Depends(require_role("DOCTOR")),
     db: AsyncSession = Depends(get_db),
     report_service: ReportService = Depends(get_report_service)
 ):
@@ -168,16 +170,30 @@ async def doctor_review_report(
     
     RBAC: Doctor only
     """
+    from app.services.clinical_service import ClinicalService
+    from app_logging.id_hasher import hash_id
+    
+    # Get doctor profile to use doctor.id
+    clinical_service = ClinicalService()
+    doctor = await clinical_service.get_doctor_by_user_id(db, user_id=str(current_user.id))
+    
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Doctor profile not found"
+        )
+    
     logger.info(
         "doctor_review_request",
-        report_id=report_id,
-        doctor_id=doctor_id,
+        report_id_hash=hash_id(report_id),
+        doctor_id_hash=hash_id(str(doctor.id)),
         has_notes=bool(review_request.notes)
     )
     
     report = await report_service.mark_doctor_reviewed(
         report_id=report_id,
-        doctor_id=doctor_id,
+        doctor_id=str(doctor.id),
+        notes=review_request.notes,
         db=db
     )
     
@@ -188,7 +204,7 @@ async def doctor_review_report(
 async def hod_review_report(
     report_id: str,
     review_request: HODReviewRequest,
-    hod_id: str = "current_hod_id",  # TODO: Get from auth context
+    current_user: User = Depends(require_role("HOD")),
     db: AsyncSession = Depends(get_db),
     report_service: ReportService = Depends(get_report_service)
 ):
@@ -198,20 +214,55 @@ async def hod_review_report(
     RBAC: HOD only
     Requires doctor review to be complete.
     """
+    from app.services.clinical_service import ClinicalService
+    from app_logging.id_hasher import hash_id
+    
+    # Get HOD profile to use hod.id
+    clinical_service = ClinicalService()
+    hod = await clinical_service.get_hod_by_user_id(db, user_id=str(current_user.id))
+    
+    if not hod:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="HOD profile not found"
+        )
+    
     logger.info(
         "hod_review_request",
-        report_id=report_id,
-        hod_id=hod_id,
+        report_id_hash=hash_id(report_id),
+        hod_id_hash=hash_id(str(hod.id)),
         has_notes=bool(review_request.notes)
     )
     
     report = await report_service.mark_hod_reviewed(
         report_id=report_id,
-        hod_id=hod_id,
+        hod_id=str(hod.id),
+        notes=review_request.notes,
         db=db
     )
     
     return report
+
+
+@router.get("/pending-review", response_model=List[PendingReviewResponse])
+async def get_pending_reviews(
+    current_user: User = Depends(require_role("HOD")),
+    db: AsyncSession = Depends(get_db),
+    report_service: ReportService = Depends(get_report_service)
+):
+    """
+    Get all reports pending HOD review (doctor-reviewed but not HOD-reviewed).
+    
+    RBAC: HOD only
+    """
+    logger.info("get_pending_reviews_request", tenant_id=str(current_user.tenant_id))
+    
+    pending_reviews = await report_service.get_pending_hod_reviews(
+        tenant_id=str(current_user.tenant_id),
+        db=db
+    )
+    
+    return pending_reviews
 
 
 @router.post("/child/{child_id}/generate-missing")
@@ -375,6 +426,22 @@ async def get_report_status(
     logger.info("get_report_status_request", child_id=child_id)
     
     try:
+        # Get child to calculate age for filtering
+        from db.models.clinical import Child
+        from db.models.assessment import AssessmentQuestion
+        from datetime import date
+        
+        child = await db.get(Child, child_id)
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+        
+        # Calculate child's age in months
+        today = date.today()
+        child_age_months = (today.year - child.date_of_birth.year) * 12 + (today.month - child.date_of_birth.month)
+        
         # Get all active pools
         all_pools_result = await db.execute(
             select(AssessmentPool).where(AssessmentPool.is_active == True)
@@ -392,6 +459,7 @@ async def get_report_status(
         # Build pool status list
         pool_status_list = []
         total_completion = 0.0
+        applicable_pools_count = 0  # Track only applicable pools
         
         for pool in all_pools:
             # Get sections in this pool
@@ -402,11 +470,31 @@ async def get_report_status(
                 )
             )
             sections = sections_result.scalars().all()
-            total_sections = len(sections)
             
-            if total_sections == 0:
+            if len(sections) == 0:
                 continue
             
+            # Check if pool has any applicable sections for child's age
+            has_applicable_section = False
+            for section in sections:
+                question_count_result = await db.execute(
+                    select(func.count(AssessmentQuestion.id))
+                    .where(
+                        AssessmentQuestion.section_id == section.id,
+                        AssessmentQuestion.min_age_months <= child_age_months,
+                        AssessmentQuestion.max_age_months >= child_age_months
+                    )
+                )
+                if question_count_result.scalar() > 0:
+                    has_applicable_section = True
+                    break
+            
+            # Skip non-applicable pools
+            if not has_applicable_section:
+                continue
+            
+            applicable_pools_count += 1  # Count this as an applicable pool
+            total_sections = len(sections)
             section_ids = [s.id for s in sections]
             
             # Get completed responses for this pool
@@ -438,10 +526,11 @@ async def get_report_status(
             if total_sections > 0:
                 total_completion += (completed_sections / total_sections) * 100
         
-        # Calculate overall completion
+        # Calculate overall completion based on APPLICABLE pools only
         overall_completion = (
-            total_completion / len(all_pools) if len(all_pools) > 0 else 0.0
+            total_completion / applicable_pools_count if applicable_pools_count > 0 else 0.0
         )
+
         
         # Check if all pools have summaries
         all_pools_complete = all(ps.has_summary for ps in pool_status_list)
