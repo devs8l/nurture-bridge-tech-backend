@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import uuid4
 from typing import Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, TIMESTAMP, UniqueConstraint
+from sqlalchemy import String, Integer, DateTime, ForeignKey, TIMESTAMP, UniqueConstraint, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -152,11 +152,24 @@ class FinalReport(Base, TimestampMixin):
         comment="Timestamp when doctor reviewed/signed the report"
     )
 
+    doctor_notes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Optional notes from doctor review"
+    )
+
     hod_reviewed_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP,
         nullable=True,
         comment="Timestamp when HOD reviewed/signed the report (final sign-off)"
     )
+
+    hod_notes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Optional notes from HOD review"
+    )
+
 
     generated_at: Mapped[datetime] = mapped_column(
         DateTime,
