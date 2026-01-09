@@ -4,7 +4,7 @@ Report schemas for AI-generated summaries and final reports.
 
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================================
@@ -55,12 +55,13 @@ class FinalReportResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Set computed fields based on review timestamps
+    @model_validator(mode='after')
+    def compute_review_status(self):
+        """Compute review status fields based on timestamps."""
         self.is_doctor_reviewed = self.doctor_reviewed_at is not None
         self.is_hod_reviewed = self.hod_reviewed_at is not None
         self.is_fully_approved = self.is_doctor_reviewed and self.is_hod_reviewed
+        return self
 
 
 class DoctorReviewRequest(BaseModel):
@@ -110,3 +111,27 @@ class ReportStatusResponse(BaseModel):
     )
     all_pools_complete: bool
     final_report_id: Optional[str] = None
+
+
+# ============================================================================
+# Pending Review Schemas
+# ============================================================================
+
+class PendingReviewResponse(BaseModel):
+    """Response model for reports pending HOD review."""
+    report_id: str
+    child_id: str
+    child_first_name: str
+    child_last_name: str
+    child_date_of_birth: str  # ISO format date string
+    parent_id: str
+    parent_first_name: str
+    parent_last_name: str
+    generated_at: datetime
+    doctor_reviewed_at: datetime
+    doctor_id: str
+    doctor_first_name: str
+    doctor_last_name: str
+    
+    model_config = {"from_attributes": True}
+

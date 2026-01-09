@@ -592,3 +592,81 @@ class ClinicalService:
             skip=skip, 
             limit=limit
         )
+    
+    async def get_doctor_parents_with_reports(
+        self,
+        db: AsyncSession,
+        *,
+        doctor_id: str
+    ) -> List[dict]:
+        """
+        Get all parents assigned to a doctor with their children and report status.
+        Used for doctor's dashboard view.
+        
+        Returns list of parent dicts with children including report status.
+        """
+        from db.models.report import FinalReport
+        from sqlalchemy import select
+        
+        logger.info("getting_doctor_parents_with_reports", doctor_id_hash=hash_id(doctor_id))
+        
+        # Get all parents assigned to this doctor
+        parents = await self.doctor_repo.get_assigned_parents(db, doctor_id=doctor_id)
+        
+        result_parents = []
+        for parent in parents:
+            # Get all children for this parent
+            children = await self.parent_repo.get_children(db, parent_id=str(parent.id))
+            
+            # For each child, get report status
+            children_with_reports = []
+            for child in children:
+                # Check if final report exists for this child
+                report_result = await db.execute(
+                    select(FinalReport).where(FinalReport.child_id == str(child.id))
+                )
+                report = report_result.scalar_one_or_none()
+                
+                child_dict = {
+                    "id": child.id,
+                    "parent_id": child.parent_id,
+                    "tenant_id": child.tenant_id,
+                    "first_name": child.first_name,
+                    "last_name": child.last_name,
+                    "date_of_birth": child.date_of_birth,
+                    "gender": child.gender,
+                    "created_at": child.created_at,
+                    "updated_at": child.updated_at,
+                    "has_report": report is not None,
+                    "is_doctor_reviewed": report.doctor_reviewed_at is not None if report else False,
+                    "is_hod_reviewed": report.hod_reviewed_at is not None if report else False,
+                    "report_id": str(report.id) if report else None,
+                    "report_generated_at": report.generated_at if report else None
+                }
+                children_with_reports.append(child_dict)
+            
+            # Build parent response with children
+            parent_dict = {
+                "id": parent.id,
+                "user_id": parent.user_id,
+                "tenant_id": parent.tenant_id,
+                "first_name": parent.first_name,
+                "last_name": parent.last_name,
+                "phone_number": parent.phone_number,
+                "email": parent.user.email if hasattr(parent, 'user') and parent.user else None,
+                "status": parent.user.status if hasattr(parent, 'user') and parent.user else None,
+                "children": children_with_reports,
+                "created_at": parent.created_at,
+                "updated_at": parent.updated_at
+            }
+            result_parents.append(parent_dict)
+        
+        logger.info(
+            "doctor_parents_with_reports_fetched",
+            doctor_id_hash=hash_id(doctor_id),
+            parents_count=len(result_parents),
+            total_children=sum(len(p["children"]) for p in result_parents)
+        )
+        
+        return result_parents
+

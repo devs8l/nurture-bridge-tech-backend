@@ -206,3 +206,44 @@ class StaffMemberResponse(BaseSchema):
     
     class Config:
         from_attributes = True
+
+
+class ChildWithReportStatus(ChildResponse):
+    """
+    Extended child response with report status information.
+    Used for doctor's view of children with their report progress.
+    """
+    has_report: bool = Field(default=False, description="Whether a final report has been generated")
+    is_doctor_reviewed: bool = Field(default=False, description="Whether doctor has reviewed the report")
+    is_hod_reviewed: bool = Field(default=False, description="Whether HOD has reviewed the report")
+    report_id: Optional[UUID] = Field(None, description="Final report ID if exists")
+    report_generated_at: Optional[datetime] = Field(None, description="When report was generated")
+    
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# PARENT WITH REPORTS SCHEMAS
+# ============================================================================
+
+class ParentWithReportsResponse(BaseSchema):
+    """
+    Schema for parent with children and their report status.
+    Used by doctors to see their assigned parents and report progress.
+    """
+    id: UUID
+    user_id: UUID
+    tenant_id: UUID
+    first_name: str
+    last_name: str
+    phone_number: Optional[str] = None
+    email: str
+    status: UserStatus
+    children: List[ChildWithReportStatus] = []
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
