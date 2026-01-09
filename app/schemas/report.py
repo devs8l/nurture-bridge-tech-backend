@@ -43,7 +43,9 @@ class FinalReportResponse(BaseModel):
     overall_score: Optional[int] = None
     overall_max_score: Optional[int] = None
     doctor_reviewed_at: Optional[datetime] = None
+    doctor_notes: Optional[str] = None
     hod_reviewed_at: Optional[datetime] = None
+    hod_notes: Optional[str] = None
     generated_at: datetime
     created_at: datetime
     updated_at: datetime
